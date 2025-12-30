@@ -39,34 +39,30 @@ exports.sendOtp = async (req, res) => {
  * Verify OTP Controller
  */
 
-exports.verifyOtp = async (req, res) => {
+
+    exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
     if (!phone || !otp) {
-      console.log('❌ Missing phone or OTP');
       return res.status(400).json({
         message: 'Phone and OTP are required'
       });
     }
 
-    if (otp !== '1234') {
-      console.log(`❌ Invalid OTP attempt for phone: ${phone}`);
+    console.log('OTP RECEIVED:', otp, typeof otp);
+
+    // DEV ONLY
+    if (String(otp).trim() !== '1234') {
       return res.status(400).json({
         message: 'Invalid OTP'
       });
     }
 
-    let user = await User.findOne({ phone,  lastLocation: {
-      type: 'Point',
-      coordinates: [0, 0]
-    }});
+    let user = await User.findOne({ phone });
 
     if (!user) {
       user = await User.create({ phone });
-      console.log('🆕 New user created:', user._id.toString());
-    } else {
-      console.log('👤 Existing user login:', user._id.toString());
     }
 
     const token = jwt.sign(
@@ -74,15 +70,6 @@ exports.verifyOtp = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
-
-    // ✅ PRINT API RESPONSE IN TERMINAL
-    console.log('✅ LOGIN SUCCESS RESPONSE:', {
-      token,
-      user: {
-        id: user._id.toString(),
-        phone: user.phone
-      }
-    });
 
     return res.status(200).json({
       message: 'Login successful',
@@ -94,11 +81,13 @@ exports.verifyOtp = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('🔥 VERIFY OTP ERROR:', error);
+    console.error('VERIFY OTP ERROR:', error);
     return res.status(500).json({
       message: 'Something went wrong'
     });
   }
 };
+,
+  
 
 
