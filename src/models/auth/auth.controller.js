@@ -38,8 +38,6 @@ exports.sendOtp = async (req, res) => {
 /**
  * Verify OTP Controller
  */
-
-
     exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
@@ -87,7 +85,7 @@ exports.sendOtp = async (req, res) => {
     });
   }
 };
-,
+
   
 
 
