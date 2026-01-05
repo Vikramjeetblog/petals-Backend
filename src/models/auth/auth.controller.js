@@ -42,14 +42,27 @@ exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
+    console.log('================ OTP DEBUG (RENDER) ================');
+    console.log('PHONE:', phone);
+    console.log('RAW OTP:', otp);
+    console.log('OTP TYPE:', typeof otp);
+    console.log('OTP STRING:', JSON.stringify(otp));
+    console.log(
+      'CLEAN OTP:',
+      otp ? otp.toString().replace(/\D/g, '') : null
+    );
+    console.log('===================================================');
+
     if (!phone || !otp) {
       return res.status(400).json({
         message: 'Phone and OTP are required'
       });
     }
 
-    // ✅ DEV OTP (GLOBAL)
-    if (String(otp).trim() !== '1234') {
+    // ✅ DEV OTP (GLOBAL = 1234)
+    const cleanOtp = otp.toString().replace(/\D/g, '');
+
+    if (cleanOtp !== '1234') {
       return res.status(400).json({
         message: 'Invalid OTP'
       });
@@ -84,9 +97,5 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
-      
- 
-
-  
 
 
