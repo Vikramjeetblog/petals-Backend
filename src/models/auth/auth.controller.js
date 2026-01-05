@@ -38,7 +38,7 @@ exports.sendOtp = async (req, res) => {
 /**
  * Verify OTP Controller
  */
-    exports.verifyOtp = async (req, res) => {
+exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
 
@@ -48,9 +48,7 @@ exports.sendOtp = async (req, res) => {
       });
     }
 
-    console.log('OTP RECEIVED:', otp, typeof otp);
-
-    // DEV ONLY
+    // ✅ DEV OTP (GLOBAL)
     if (String(otp).trim() !== '1234') {
       return res.status(400).json({
         message: 'Invalid OTP'
@@ -85,6 +83,9 @@ exports.sendOtp = async (req, res) => {
     });
   }
 };
+
+      
+ 
 
   
 
