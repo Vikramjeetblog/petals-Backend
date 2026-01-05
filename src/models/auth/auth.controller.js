@@ -1,32 +1,25 @@
-const Otp = require('./otp.service');
 const User = require('../user/user.model');
 const jwt = require('jsonwebtoken');
 
 /**
- * Send OTP Controller
+ * Send OTP Controller (DEV ONLY)
  */
 exports.sendOtp = async (req, res) => {
   try {
     const { phone } = req.body;
 
-    // 1️⃣ Phone validation
     if (!phone) {
       return res.status(400).json({
         message: 'Phone number is required'
       });
     }
 
-    // 2️⃣ Generate OTP
-    const otp = Math.floor(1000 + Math.random() * 9000);
-
-    // 3️⃣ Save OTP temporarily
-    await Otp.saveOtp(phone, otp);
-
-    // 4️⃣ Send OTP (for now console)
-    console.log(`OTP for ${phone} is ${otp}`);
+    // ✅ DEV MODE: fixed OTP
+    console.log(`DEV OTP for ${phone} is 1234`);
 
     return res.status(200).json({
-      message: 'OTP sent successfully'
+      message: 'OTP sent successfully (DEV)',
+      otp: '1234' // optional, frontend testing ke liye
     });
 
   } catch (error) {
@@ -35,23 +28,13 @@ exports.sendOtp = async (req, res) => {
     });
   }
 };
+
 /**
- * Verify OTP Controller
+ * Verify OTP Controller (DEV ONLY)
  */
 exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
-
-    console.log('================ OTP DEBUG (RENDER) ================');
-    console.log('PHONE:', phone);
-    console.log('RAW OTP:', otp);
-    console.log('OTP TYPE:', typeof otp);
-    console.log('OTP STRING:', JSON.stringify(otp));
-    console.log(
-      'CLEAN OTP:',
-      otp ? otp.toString().replace(/\D/g, '') : null
-    );
-    console.log('===================================================');
 
     if (!phone || !otp) {
       return res.status(400).json({
@@ -59,7 +42,7 @@ exports.verifyOtp = async (req, res) => {
       });
     }
 
-    // ✅ DEV OTP (GLOBAL = 1234)
+    // ✅ FORCE CLEAN + CHECK
     const cleanOtp = otp.toString().replace(/\D/g, '');
 
     if (cleanOtp !== '1234') {
@@ -69,7 +52,6 @@ exports.verifyOtp = async (req, res) => {
     }
 
     let user = await User.findOne({ phone });
-
     if (!user) {
       user = await User.create({ phone });
     }
@@ -96,6 +78,3 @@ exports.verifyOtp = async (req, res) => {
     });
   }
 };
-
-
-
