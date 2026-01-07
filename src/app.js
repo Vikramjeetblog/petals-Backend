@@ -23,12 +23,15 @@ const userRoutes = require(path.join(__dirname, 'models', 'user', 'user.routes.j
 const cartRoutes = require(path.join(__dirname, 'models', 'cart', 'cart.routes.js'));
 const checkoutRoutes = require(path.join(__dirname, 'models', 'checkout', 'checkout.routes.js'));
 const productRoutes = require(path.join(__dirname, 'models', 'product', 'product.routes.js'));
+const orderRoutes = require(path.join(__dirname, 'models', 'order', 'order.routes.js'));
 
 app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
 app.use('/cart', cartRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/products', productRoutes);
+app.use('/order', productRoutes);
+
 
 app.get('/', (req, res) => {
   res.send('PETALS Backend is running');
