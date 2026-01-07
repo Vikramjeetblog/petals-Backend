@@ -11,7 +11,11 @@ const userRoutes = require(
 path.join(__dirname,'models','user','user.routes.js')
   )
 const cartRoutes = require(path.join(__dirname,'models','cart','cart.routes.js'));
-const checkoutRoutes = require(path.join(__dirname,'models','cart','cart.routes.js'));
+const checkoutRoutes = require(path.join(__dirname,'models','checkout','checkout.routes.js'));
+const productRoutes = require(path.join(__dirname,'models','product','product.routes.js'));
+
+
+
 const app = express();
 
 app.use(cors());
@@ -21,6 +25,7 @@ app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
 app.use('/cart',cartRoutes);
 app.use('/checkout',checkoutRoutes);
+app.use("/products", productRoutes);
 app.get('/', (req, res) => {
   res.send('PETALS Backend is running');
 });
