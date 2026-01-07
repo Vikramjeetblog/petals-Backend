@@ -6,10 +6,23 @@ const ProductSchema = new mongoose.Schema(
     name: {
       type: String,
       required: true,
+      trim: true,
     },
 
     price: {
       type: Number,
+      required: true,
+      min: 0,
+    },
+
+    category: {
+      type: String,
+      required: true,
+      index: true,
+    },
+
+    image: {
+      type: String,
       required: true,
     },
 
@@ -32,6 +45,20 @@ const ProductSchema = new mongoose.Schema(
       liveAnimal: { type: Boolean, default: false },
     },
 
+    /* ================= MARKETPLACE ================= */
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Vendor',
+      required: function () {
+        return this.fulfillmentModel === 'MARKETPLACE';
+      },
+    },
+
+    autoAcceptOrder: {
+      type: Boolean,
+      default: true, // auto-accept vendor orders for now
+    },
+
     /* ================= KIT BUILDER ================= */
     isKit: {
       type: Boolean,
@@ -39,7 +66,7 @@ const ProductSchema = new mongoose.Schema(
     },
 
     kitData: {
-      occasion: { type: String }, // e.g. Laxmi Puja
+      occasion: { type: String },
       items: [
         {
           productId: {
@@ -49,28 +76,23 @@ const ProductSchema = new mongoose.Schema(
           quantity: {
             type: Number,
             default: 1,
+            min: 1,
           },
         },
       ],
-    },
-
-    /* ================= MARKETPLACE ================= */
-    // only for MARKETPLACE products
-    vendor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Vendor',
-      default: null,
     },
 
     /* ================= STATUS ================= */
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
   },
   { timestamps: true }
 );
 
+/* ================= BUSINESS RULES ================= */
 ProductSchema.pre('save', function (next) {
   /* EXPRESS RULES */
   if (this.fulfillmentModel === 'EXPRESS') {
@@ -81,6 +103,9 @@ ProductSchema.pre('save', function (next) {
         new Error('Live animals cannot be EXPRESS products')
       );
     }
+
+    // EXPRESS products must NOT have vendor
+    this.vendor = null;
   }
 
   /* MARKETPLACE RULES */
@@ -120,6 +145,5 @@ ProductSchema.pre('save', function (next) {
 
   next();
 });
-
 
 module.exports = mongoose.model('Product', ProductSchema);
