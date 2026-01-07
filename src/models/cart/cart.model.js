@@ -1,5 +1,3 @@
-
-
 const mongoose = require('mongoose');
 
 const CartItemSchema = new mongoose.Schema(
@@ -9,13 +7,11 @@ const CartItemSchema = new mongoose.Schema(
       ref: 'Product',
       required: true
     },
-
     quantity: {
       type: Number,
       required: true,
       min: 1
     },
-
     price: {
       type: Number,
       required: true
@@ -26,9 +22,6 @@ const CartItemSchema = new mongoose.Schema(
 
 const CartSchema = new mongoose.Schema(
   {
-    /**
-     * Cart belongs to one user
-     */
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -36,23 +29,17 @@ const CartSchema = new mongoose.Schema(
       unique: true
     },
 
-    /**
-     * Assigned dark store
-     * Used only for EXPRESS items
-     */
     assignedStore: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Store',
       default: null
     },
+
     expressItems: [CartItemSchema],
 
-  
     marketplaceItems: [
       {
         ...CartItemSchema.obj,
-
-    
         vendor: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Vendor',
@@ -61,15 +48,12 @@ const CartSchema = new mongoose.Schema(
       }
     ],
 
-  
     isActive: {
       type: Boolean,
       default: true
     }
   },
-  {
-    timestamps: true
-  }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model('Cart', CartSchema);
