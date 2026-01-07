@@ -1,44 +1,87 @@
 const mongoose = require('mongoose');
 
+/* ================= ORDER ITEM ================= */
 const OrderItemSchema = new mongoose.Schema(
   {
-    product: { type: mongoose.Schema.Types.ObjectId, ref: 'Product', required: true },
-    quantity: { type: Number, required: true },
-    price: { type: Number, required: true }
-  },
-  { _id: false }
-);
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product',
+      required: true
+    },
 
-const OrderSchema = new mongoose.Schema(
-  {
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    quantity: {
+      type: Number,
+      required: true,
+      min: 1
+    },
 
-    type: {
+    price: {
+      type: Number,
+      required: true,
+      immutable: true
+    },
+
+    fulfillmentModel: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
       required: true
     },
 
-    store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', default: null },
-    vendor: { type: mongoose.Schema.Types.ObjectId, ref: 'Vendor', default: null },
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Vendor',
+      default: null
+    }
+  },
+  { _id: false }
+);
 
-    items: [OrderItemSchema],
+/* ================= ORDER ================= */
+const OrderSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true
+    },
 
-    totalAmount: { type: Number, required: true },
+    items: {
+      type: [OrderItemSchema],
+      required: true
+    },
 
-    paymentStatus: {
-      type: String,
-      enum: ['PAID', 'COD', 'PENDING'],
-      default: 'PENDING'
+    totals: {
+      expressTotal: {
+        type: Number,
+        default: 0
+      },
+      marketplaceTotal: {
+        type: Number,
+        default: 0
+      },
+      grandTotal: {
+        type: Number,
+        required: true
+      }
     },
 
     status: {
       type: String,
-      enum: ['PLACED', 'CONFIRMED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'],
-      default: 'PLACED'
+      enum: ['PLACED', 'ACCEPTED'],
+      default: 'ACCEPTED' // auto-accept for now
     },
 
-    paymentGroupId: { type: String, required: true }
+    paymentStatus: {
+      type: String,
+      enum: ['PENDING', 'PAID'],
+      default: 'PAID' // mock payment for demo
+    },
+
+    splitRequired: {
+      type: Boolean,
+      default: false
+    }
   },
   { timestamps: true }
 );
