@@ -30,7 +30,7 @@ app.use('/user', userRoutes);
 app.use('/cart', cartRoutes);
 app.use('/checkout', checkoutRoutes);
 app.use('/products', productRoutes);
-app.use('/order', productRoutes);
+app.use('/order', orderRoutes);
 
 
 app.get('/', (req, res) => {
