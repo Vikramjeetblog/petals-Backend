@@ -13,10 +13,10 @@ router.get('/view',  cartController.viewCart);
 router.post('/update',  authMiddleware,cartController.updateQuantity);
 
 // Remove item explicitly
-router.post('/remove', authMiddleware, cartController.removeItem);
+//router.post('/remove', authMiddleware, cartController.removeItem);
 
 // Merge guest cart into user cart
-router.post('/merge', authMiddleware,  cartController.mergeCart);
+//router.post('/merge', authMiddleware,  cartController.mergeCart);
 
 module.exports = router;
 
