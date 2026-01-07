@@ -4,27 +4,26 @@ const path = require('path');
 
 console.log('APP DIR:', __dirname);
 
-const authRoutes = require(path.join(__dirname, 'models', 'auth', 'auth.routes.js'));
-const userRoutes = require(path.join(__dirname, 'models', 'user', 'user.routes.js'));
-const cartRoutes = require(path.join(__dirname, 'models', 'cart', 'cart.routes.js'));
-const checkoutRoutes = require(path.join(__dirname, 'models', 'checkout', 'checkout.routes.js'));
-const productRoutes = require(path.join(__dirname, 'models', 'product', 'product.routes.js'));
+/* ✅ FIX IS HERE */
+const app = express(); // ⬅️ () WAS MISSING
 
-const app = express;
-
-/* 🔴 CORS MUST BE FIRST */
+/* 🔴 CORS — ANDROID + RENDER SAFE */
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-/* 🔴 HANDLE PREFLIGHT */
 app.options('*', cors());
-
 app.use(express.json());
 
 /* ROUTES */
+const authRoutes = require(path.join(__dirname, 'models', 'auth', 'auth.routes.js'));
+const userRoutes = require(path.join(__dirname, 'models', 'user', 'user.routes.js'));
+const cartRoutes = require(path.join(__dirname, 'models', 'cart', 'cart.routes.js'));
+const checkoutRoutes = require(path.join(__dirname, 'models', 'checkout', 'checkout.routes.js'));
+const productRoutes = require(path.join(__dirname, 'models', 'product', 'product.routes.js'));
+
 app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
 app.use('/cart', cartRoutes);
