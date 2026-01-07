@@ -66,12 +66,23 @@ exports.addToCart = async (req, res) => {
     }
 
     /* ================= EXPRESS ================= */
-    if (product.fulfillmentModel === 'EXPRESS') {
-      if (!req.user.assignedStore) {
-        return res.status(400).json({
-          message: 'Please set delivery location first'
-        });
-      }
+  /* ================= EXPRESS ================= */
+if (product.fulfillmentModel === 'EXPRESS') {
+  const item = cart.expressItems.find(
+    (i) => i.product.toString() === productId
+  );
+
+  if (item) {
+    item.quantity += quantity;
+  } else {
+    cart.expressItems.push({
+      product: product._id,
+      quantity,
+      price: product.price
+    });
+  }
+}
+
 
       const item = cart.expressItems.find(
         (i) => i.product.toString() === productId
