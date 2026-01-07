@@ -134,34 +134,55 @@ exports.addToCart = async (req, res) => {
 /* ======================================================
    VIEW CART
 ====================================================== */
+/* ======================================================
+   VIEW CART (SAFE + FIXED)
+====================================================== */
 exports.viewCart = async (req, res) => {
   try {
+    /* ---------- AUTH GUARD ---------- */
     if (!req.user || !req.user._id) {
-      return res.status(401).json({ message: 'User not authenticated' });
+      return res.status(401).json({
+        message: 'User not authenticated'
+      });
     }
 
-    const cart = await Cart.findOne({
+    /* ---------- FETCH CART ---------- */
+    let query = Cart.findOne({
       user: req.user._id,
       isActive: true
     })
       .populate('expressItems.product')
-      .populate('marketplaceItems.product')
-      .populate('marketplaceItems.vendor');
+      .populate('marketplaceItems.product');
 
+    // 🔥 IMPORTANT FIX — vendor populate must be non-strict
+    query = query.populate({
+      path: 'marketplaceItems.vendor',
+      strictPopulate: false
+    });
+
+    const cart = await query;
+
+    /* ---------- EMPTY CART ---------- */
     if (!cart) {
-      return res.status(200).json({ message: 'Cart is empty', cart: null });
+      return res.status(200).json({
+        message: 'Cart is empty',
+        cart: null
+      });
     }
 
+    /* ---------- TOTAL CALCULATION ---------- */
     let expressTotal = 0;
     let marketplaceTotal = 0;
 
-    cart.expressItems.forEach(
-      (i) => (expressTotal += i.price * i.quantity)
-    );
-    cart.marketplaceItems.forEach(
-      (i) => (marketplaceTotal += i.price * i.quantity)
-    );
+    cart.expressItems.forEach((item) => {
+      expressTotal += item.price * item.quantity;
+    });
 
+    cart.marketplaceItems.forEach((item) => {
+      marketplaceTotal += item.price * item.quantity;
+    });
+
+    /* ---------- RESPONSE ---------- */
     return res.status(200).json({
       message: 'Cart fetched successfully',
       cart: {
@@ -177,11 +198,18 @@ exports.viewCart = async (req, res) => {
         }
       }
     });
+
   } catch (error) {
-    console.error('❌ VIEW CART ERROR:', error);
-    return res.status(500).json({ message: 'Something went wrong' });
+    console.error('❌ VIEW CART ERROR FULL:', error);
+    return res.status(500).json({
+      message: error.message || 'Something went wrong'
+    });
   }
 };
+
+    
+
+
 
 /* ======================================================
    UPDATE QUANTITY
