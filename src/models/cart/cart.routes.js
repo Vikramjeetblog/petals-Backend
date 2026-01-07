@@ -1,6 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const authMiddleware = require('../middleware/auth.middleware');
+const path = require('path');
+const authMiddleware = require(
+  path.join(__dirname, '..', 'middleware', 'auth.middleware.js')
+);
+
 
 const cartController = require('./cart.controller');
 
