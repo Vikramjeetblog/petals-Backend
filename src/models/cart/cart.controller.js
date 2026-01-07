@@ -135,32 +135,22 @@ exports.addToCart = async (req, res) => {
    VIEW CART
 ====================================================== */
 
+
 exports.viewCart = async (req, res) => {
   try {
-    /* ---------- AUTH GUARD ---------- */
     if (!req.user || !req.user._id) {
       return res.status(401).json({
         message: 'User not authenticated'
       });
     }
 
-    /* ---------- FETCH CART ---------- */
-    let query = Cart.findOne({
+    const cart = await Cart.findOne({
       user: req.user._id,
       isActive: true
     })
       .populate('expressItems.product')
-      .populate('marketplaceItems.product');
+      .populate('marketplaceItems.product'); // ✅ ONLY THIS
 
-    // 🔥 IMPORTANT FIX — vendor populate must be non-strict
-    query = query.populate({
-      path: 'marketplaceItems.vendor',
-      strictPopulate: false
-    });
-
-    const cart = await query;
-
-    /* ---------- EMPTY CART ---------- */
     if (!cart) {
       return res.status(200).json({
         message: 'Cart is empty',
@@ -168,19 +158,17 @@ exports.viewCart = async (req, res) => {
       });
     }
 
-    /* ---------- TOTAL CALCULATION ---------- */
     let expressTotal = 0;
     let marketplaceTotal = 0;
 
-    cart.expressItems.forEach((item) => {
-      expressTotal += item.price * item.quantity;
-    });
+    cart.expressItems.forEach(
+      (item) => (expressTotal += item.price * item.quantity)
+    );
 
-    cart.marketplaceItems.forEach((item) => {
-      marketplaceTotal += item.price * item.quantity;
-    });
+    cart.marketplaceItems.forEach(
+      (item) => (marketplaceTotal += item.price * item.quantity)
+    );
 
-    /* ---------- RESPONSE ---------- */
     return res.status(200).json({
       message: 'Cart fetched successfully',
       cart: {
@@ -196,16 +184,11 @@ exports.viewCart = async (req, res) => {
         }
       }
     });
-
   } catch (error) {
-    console.error('❌ VIEW CART ERROR FULL:', error);
-    return res.status(500).json({
-      message: error.message || 'Something went wrong'
-    });
+    console.error('❌ VIEW CART ERROR:', error);
+    return res.status(500).json({ message: error.message });
   }
 };
-
-    
 
 
 
