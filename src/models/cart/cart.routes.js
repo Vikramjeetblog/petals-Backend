@@ -4,7 +4,7 @@ const router = express.Router();
 
 const cartController = require('./cart.controller');
 
-router.post('/add', authMiddleware, cartController.addToCart);
+router.post('/add',  cartController.addToCart);
 
 // View cart (express + marketplace split)
 router.get('/view',  cartController.viewCart);
