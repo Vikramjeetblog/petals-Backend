@@ -28,18 +28,21 @@ const Product = require('../product/product.model');
       return res.status(404).json({ message: 'Product not available' });
     }
 
-    let cart = await Cart.findOne({
-      user: req.user._id,
-      isActive: true
-    });
+   let cart = await Cart.findOne({ user: req.user._id });
 
-    if (!cart) {
-      cart = await Cart.create({
-        user: req.user._id,
-        expressItems: [],
-        marketplaceItems: []
-      });
-    }
+if (!cart) {
+  cart = await Cart.create({
+    user: req.user._id,
+    isActive: true,
+    expressItems: [],
+    marketplaceItems: []
+  });
+} else if (!cart.isActive) {
+  cart.isActive = true;
+}
+
+
+   
 
     /* ================= KIT ================= */
     if (product.isKit) {
