@@ -154,7 +154,7 @@ exports.viewCart = async (req, res) => {
 
     // 🔥 IMPORTANT FIX — vendor populate must be non-strict
     query = query.populate({
-      path: 'marketplaceItems.Vendor',
+      path: 'marketplaceItems.vendor',
       strictPopulate: false
     });
 
