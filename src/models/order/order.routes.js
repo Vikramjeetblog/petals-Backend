@@ -4,9 +4,10 @@ const authMiddleware = require('../middleware/auth.middleware');
 const {
   placeOrder,
   getMyOrders
-} = require('./order/order.controller');
+} = require('./order.controller');
 
 router.post('/place', authMiddleware, placeOrder);
 router.get('/', authMiddleware, getMyOrders);
 
 module.exports = router;
+
