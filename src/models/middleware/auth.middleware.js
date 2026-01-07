@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../user/user.model');
+console.log('🔥 AUTH MIDDLEWARE LOADED:', __filename);
 
- 
 const authMiddleware = async (req, res, next) => {
   try {
     // 1️ Read Authorization header
