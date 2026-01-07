@@ -5,7 +5,8 @@ const Product = require('../product/product.model');
 /* ======================================================
    ADD TO CART (EXPRESS + MARKETPLACE + KIT)
 ====================================================== */
-exports.addToCart = async (req, res) => {
+
+    exports.addToCart = async (req, res) => {
   try {
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
@@ -48,12 +49,13 @@ exports.addToCart = async (req, res) => {
         });
       }
 
-      const item = cart.expressItems.find(
+      const kitItem = cart.expressItems.find(
         (i) => i.product.toString() === productId
       );
 
-      if (item) item.quantity += quantity;
-      else {
+      if (kitItem) {
+        kitItem.quantity += quantity;
+      } else {
         cart.expressItems.push({
           product: product._id,
           quantity,
@@ -66,30 +68,14 @@ exports.addToCart = async (req, res) => {
     }
 
     /* ================= EXPRESS ================= */
-  /* ================= EXPRESS ================= */
-if (product.fulfillmentModel === 'EXPRESS') {
-  const item = cart.expressItems.find(
-    (i) => i.product.toString() === productId
-  );
-
-  if (item) {
-    item.quantity += quantity;
-  } else {
-    cart.expressItems.push({
-      product: product._id,
-      quantity,
-      price: product.price
-    });
-  }
-}
-
-
+    if (product.fulfillmentModel === 'EXPRESS') {
       const item = cart.expressItems.find(
         (i) => i.product.toString() === productId
       );
 
-      if (item) item.quantity += quantity;
-      else {
+      if (item) {
+        item.quantity += quantity;
+      } else {
         cart.expressItems.push({
           product: product._id,
           quantity,
@@ -100,7 +86,11 @@ if (product.fulfillmentModel === 'EXPRESS') {
 
     /* ================= MARKETPLACE ================= */
     if (product.fulfillmentModel === 'MARKETPLACE') {
-      if (!product.vendor || !product.vendor.isActive) {
+      if (
+        !product.vendor ||
+        (typeof product.vendor === 'object' &&
+          product.vendor.isActive === false)
+      ) {
         return res.status(400).json({
           message: 'Vendor unavailable for this product'
         });
@@ -110,11 +100,12 @@ if (product.fulfillmentModel === 'EXPRESS') {
         (i) => i.product.toString() === productId
       );
 
-      if (item) item.quantity += quantity;
-      else {
+      if (item) {
+        item.quantity += quantity;
+      } else {
         cart.marketplaceItems.push({
           product: product._id,
-          vendor: product.vendor._id,
+          vendor: product.vendor._id || product.vendor,
           quantity,
           price: product.price
         });
@@ -129,9 +120,12 @@ if (product.fulfillmentModel === 'EXPRESS') {
     });
   } catch (error) {
     console.error('❌ ADD TO CART ERROR:', error);
-    return res.status(500).json({ message: 'Something went wrong' });
+    return res.status(500).json({ message: error.message });
   }
 };
+
+    
+  
 
 /* ======================================================
    VIEW CART
