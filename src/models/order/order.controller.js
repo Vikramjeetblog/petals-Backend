@@ -33,13 +33,14 @@ exports.placeOrder = async (req, res) => {
 
     /* ---------- BUILD ORDER ITEMS ---------- */
     const orderItems = [];
-
     let expressTotal = 0;
     let marketplaceTotal = 0;
 
-    /* EXPRESS ITEMS */
+    /* ================= EXPRESS ITEMS ================= */
     for (const item of cart.expressItems) {
-      if (!item.product || !item.product.isActive) {
+      const product = item.product;
+
+      if (!product || !product.isActive) {
         return res.status(400).json({
           message: 'One or more express products are unavailable'
         });
@@ -49,17 +50,25 @@ exports.placeOrder = async (req, res) => {
       expressTotal += lineTotal;
 
       orderItems.push({
-        product: item.product._id,
+        product: product._id,
         quantity: item.quantity,
         price: item.price,
         fulfillmentModel: 'EXPRESS',
-        vendor: null
+        vendor: null,
+
+        /* ✅ KIT SUPPORT */
+        isKit: product.isKit,
+        kitItems: product.isKit
+          ? product.kitData?.items || []
+          : []
       });
     }
 
-    /* MARKETPLACE ITEMS */
+    /* ================= MARKETPLACE ITEMS ================= */
     for (const item of cart.marketplaceItems) {
-      if (!item.product || !item.product.isActive) {
+      const product = item.product;
+
+      if (!product || !product.isActive) {
         return res.status(400).json({
           message: 'One or more marketplace products are unavailable'
         });
@@ -75,11 +84,13 @@ exports.placeOrder = async (req, res) => {
       marketplaceTotal += lineTotal;
 
       orderItems.push({
-        product: item.product._id,
+        product: product._id,
         quantity: item.quantity,
         price: item.price,
         fulfillmentModel: 'MARKETPLACE',
-        vendor: item.vendor
+        vendor: item.vendor,
+        isKit: false,
+        kitItems: []
       });
     }
 
@@ -97,8 +108,8 @@ exports.placeOrder = async (req, res) => {
       splitRequired:
         cart.expressItems.length > 0 &&
         cart.marketplaceItems.length > 0,
-      status: 'ACCEPTED',        // auto-accept
-      paymentStatus: 'PAID'      // mock payment
+      status: 'ACCEPTED',
+      paymentStatus: 'PAID'
     });
 
     /* ---------- CLEAR CART ---------- */
@@ -118,13 +129,11 @@ exports.placeOrder = async (req, res) => {
   }
 };
 
-
 /* ======================================================
    GET USER ORDERS (ORDER HISTORY)
 ====================================================== */
 exports.getMyOrders = async (req, res) => {
   try {
-    /* ---------- AUTH ---------- */
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
     }
@@ -157,7 +166,11 @@ exports.getMyOrders = async (req, res) => {
         },
         quantity: item.quantity,
         price: item.price,
-        fulfillmentModel: item.fulfillmentModel
+        fulfillmentModel: item.fulfillmentModel,
+
+        /*  KIT DATA FOR REORDER */
+        isKit: item.isKit,
+        kitItems: item.kitItems || []
       }))
     }));
 
