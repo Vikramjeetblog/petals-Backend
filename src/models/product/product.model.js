@@ -26,7 +26,7 @@ const ProductSchema = new mongoose.Schema(
       required: true,
     },
 
-    /* ================= FULFILLMENT (CORE) ================= */
+    /* ================= FULFILLMENT ================= */
     fulfillmentModel: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
@@ -49,20 +49,19 @@ const ProductSchema = new mongoose.Schema(
     vendor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vendor',
-      required: function () {
-        return this.fulfillmentModel === 'MARKETPLACE';
-      },
+      default: null,
     },
 
     autoAcceptOrder: {
       type: Boolean,
-      default: true, // auto-accept vendor orders for now
+      default: true,
     },
 
-    /* ================= KIT BUILDER ================= */
+    /* ================= KIT ================= */
     isKit: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     kitData: {
@@ -72,6 +71,7 @@ const ProductSchema = new mongoose.Schema(
           productId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Product',
+            required: true,
           },
           quantity: {
             type: Number,
@@ -94,7 +94,7 @@ const ProductSchema = new mongoose.Schema(
 
 /* ================= BUSINESS RULES ================= */
 ProductSchema.pre('save', function (next) {
-  /* EXPRESS RULES */
+  /* ---------- EXPRESS RULES ---------- */
   if (this.fulfillmentModel === 'EXPRESS') {
     this.deliveryPromise = { minMinutes: 12, maxMinutes: 20 };
 
@@ -108,7 +108,7 @@ ProductSchema.pre('save', function (next) {
     this.vendor = null;
   }
 
-  /* MARKETPLACE RULES */
+  /* ---------- MARKETPLACE RULES ---------- */
   if (this.fulfillmentModel === 'MARKETPLACE') {
     if (!this.vendor) {
       return next(
@@ -124,11 +124,11 @@ ProductSchema.pre('save', function (next) {
     }
   }
 
-  /* KIT RULES */
+  /* ---------- KIT RULES ---------- */
   if (this.isKit) {
     if (
       !this.kitData ||
-      !this.kitData.items ||
+      !Array.isArray(this.kitData.items) ||
       this.kitData.items.length === 0
     ) {
       return next(
@@ -138,7 +138,7 @@ ProductSchema.pre('save', function (next) {
 
     if (this.fulfillmentModel !== 'EXPRESS') {
       return next(
-        new Error('Puja kits must be EXPRESS')
+        new Error('Kits must be EXPRESS products')
       );
     }
   }
