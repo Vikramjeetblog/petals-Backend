@@ -63,6 +63,42 @@ exports.getProducts = async (req, res) => {
   }
 };
 
+
+
+/* ======================================================
+   GET PRODUCT BY ID (FOR KIT DETAIL)
+====================================================== */
+exports.getProductById = async (req, res) => {
+  try {
+    console.log("🔵 GET PRODUCT BY ID API HIT");
+    console.log("🆔 PRODUCT ID:", req.params.id);
+
+    const product = await Product.findById(req.params.id)
+      .populate("kitData.items.productId");
+
+    if (!product || !product.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: "Product not found"
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: product
+    });
+
+  } catch (error) {
+    console.error("❌ GET PRODUCT BY ID ERROR:");
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 /* ======================================================
    UPDATE PRODUCT
 ====================================================== */
@@ -104,3 +140,4 @@ exports.updateProduct = async (req, res) => {
     });
   }
 };
+
