@@ -1,9 +1,7 @@
 const mongoose = require('mongoose');
 const Cart = require('./cart.model');
 const Product = require('../product/product.model');
-const mongoose = require('mongoose');
-const Cart = require('./cart.model');
-const Product = require('../product/product.model');
+
 
 /* ======================================================
    ADD TO CART (FIXED)
