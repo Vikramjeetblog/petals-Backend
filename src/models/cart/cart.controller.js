@@ -3,10 +3,9 @@ const Cart = require('./cart.model');
 const Product = require('../product/product.model');
 
 /* ======================================================
-   ADD TO CART (EXPRESS + MARKETPLACE + KIT)
+   ADD TO CART
 ====================================================== */
-
-    exports.addToCart = async (req, res) => {
+exports.addToCart = async (req, res) => {
   try {
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
@@ -14,7 +13,7 @@ const Product = require('../product/product.model');
 
     const { productId, quantity = 1 } = req.body;
 
-    if (!productId || !mongoose.Types.ObjectId.isValid(productId)) {
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
       return res.status(400).json({ message: 'Invalid product ID' });
     }
 
@@ -28,23 +27,25 @@ const Product = require('../product/product.model');
       return res.status(404).json({ message: 'Product not available' });
     }
 
-   let cart = await Cart.findOne({ user: req.user._id });
+    /* ---------- CART ---------- */
+    let cart = await Cart.findOne({ user: req.user._id });
 
-if (!cart) {
-  cart = await Cart.create({
-    user: req.user._id,
-    isActive: true,
-    expressItems: [],
-    marketplaceItems: []
-  });
-} else if (!cart.isActive) {
-  cart.isActive = true;
-}
+    if (!cart) {
+      cart = new Cart({
+        user: req.user._id,
+        isActive: true,
+        expressItems: [],
+        marketplaceItems: []
+      });
+    }
 
+    if (!cart.isActive) {
+      cart.isActive = true;
+      cart.expressItems = [];
+      cart.marketplaceItems = [];
+    }
 
-   
-
-    /* ================= KIT ================= */
+    /* ================= KIT (treated as EXPRESS for now) ================= */
     if (product.isKit) {
       if (product.fulfillmentModel !== 'EXPRESS') {
         return res.status(400).json({
@@ -52,12 +53,12 @@ if (!cart) {
         });
       }
 
-      const kitItem = cart.expressItems.find(
+      const item = cart.expressItems.find(
         (i) => i.product.toString() === productId
       );
 
-      if (kitItem) {
-        kitItem.quantity += quantity;
+      if (item) {
+        item.quantity += quantity;
       } else {
         cart.expressItems.push({
           product: product._id,
@@ -67,11 +68,14 @@ if (!cart) {
       }
 
       await cart.save();
-      return res.status(200).json({ message: 'Kit added to cart', cart });
+      return res.status(200).json({
+        message: 'Kit added to cart',
+        cart
+      });
     }
 
     /* ================= EXPRESS ================= */
-    if (product.fulfillmentModel === 'EXPRESS') {
+    else if (product.fulfillmentModel === 'EXPRESS') {
       const item = cart.expressItems.find(
         (i) => i.product.toString() === productId
       );
@@ -88,11 +92,10 @@ if (!cart) {
     }
 
     /* ================= MARKETPLACE ================= */
-    if (product.fulfillmentModel === 'MARKETPLACE') {
+    else if (product.fulfillmentModel === 'MARKETPLACE') {
       if (
         !product.vendor ||
-        (typeof product.vendor === 'object' &&
-          product.vendor.isActive === false)
+        (product.vendor.isActive === false)
       ) {
         return res.status(400).json({
           message: 'Vendor unavailable for this product'
@@ -108,7 +111,7 @@ if (!cart) {
       } else {
         cart.marketplaceItems.push({
           product: product._id,
-          vendor: product.vendor._id || product.vendor,
+          vendor: product.vendor._id,
           quantity,
           price: product.price
         });
@@ -127,18 +130,11 @@ if (!cart) {
   }
 };
 
-    
-  
-
 /* ======================================================
    VIEW CART
 ====================================================== */
 exports.viewCart = async (req, res) => {
   try {
-    if (!req.user?._id) {
-      return res.status(401).json({ message: 'User not authenticated' });
-    }
-
     const cart = await Cart.findOne({
       user: req.user._id,
       isActive: true
@@ -198,15 +194,7 @@ exports.viewCart = async (req, res) => {
 ====================================================== */
 exports.updateQuantity = async (req, res) => {
   try {
-    if (!req.user?._id) {
-      return res.status(401).json({ message: 'User not authenticated' });
-    }
-
     const { productId, quantity } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(productId)) {
-      return res.status(400).json({ message: 'Invalid product ID' });
-    }
 
     const cart = await Cart.findOne({
       user: req.user._id,
@@ -230,10 +218,10 @@ exports.updateQuantity = async (req, res) => {
 
       if (quantity > 0) {
         items[index].quantity = quantity;
-        return items;
+      } else {
+        items.splice(index, 1);
       }
 
-      items.splice(index, 1);
       return items;
     };
 
