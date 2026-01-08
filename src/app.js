@@ -36,8 +36,6 @@ require(path.join(__dirname, 'models', 'cart', 'cart.model.js'));
 // ORDER
 require(path.join(__dirname, 'models', 'order', 'order.model.js'));
 
-// CHECKOUT (if any model)
-require(path.join(__dirname, 'models', 'checkout', 'checkout.model.js'));
 
 
 /* ======================================================
