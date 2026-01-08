@@ -39,8 +39,23 @@ exports.getProducts = async (req, res) => {
 
     const query = { isActive: true };
 
+    /* ================= EXPRESS FILTER ================= */
     if (req.query.express === "true") {
       query.fulfillmentModel = "EXPRESS";
+    }
+
+    /* ================= KIT FILTER (🔥 MAIN FIX) ================= */
+    if (req.query.isKit === "true") {
+      query.isKit = true;
+    }
+
+    if (req.query.isKit === "false") {
+      query.isKit = false;
+    }
+
+    /* ================= CATEGORY FILTER ================= */
+    if (req.query.category) {
+      query.category = req.query.category;
     }
 
     const products = await Product.find(query);
@@ -140,4 +155,5 @@ exports.updateProduct = async (req, res) => {
     });
   }
 };
+
 
