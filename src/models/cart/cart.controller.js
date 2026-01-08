@@ -1,9 +1,12 @@
 const mongoose = require('mongoose');
 const Cart = require('./cart.model');
 const Product = require('../product/product.model');
+const mongoose = require('mongoose');
+const Cart = require('./cart.model');
+const Product = require('../product/product.model');
 
 /* ======================================================
-   ADD TO CART
+   ADD TO CART (FIXED)
 ====================================================== */
 exports.addToCart = async (req, res) => {
   try {
@@ -45,7 +48,7 @@ exports.addToCart = async (req, res) => {
       cart.marketplaceItems = [];
     }
 
-    /* ================= KIT (treated as EXPRESS for now) ================= */
+    /* ================= KIT (EXPRESS ONLY) ================= */
     if (product.isKit) {
       if (product.fulfillmentModel !== 'EXPRESS') {
         return res.status(400).json({
@@ -68,6 +71,13 @@ exports.addToCart = async (req, res) => {
       }
 
       await cart.save();
+
+      // 🔥 IMPORTANT FIX: populate before returning
+      await cart.populate([
+        { path: 'expressItems.product' },
+        { path: 'marketplaceItems.product' }
+      ]);
+
       return res.status(200).json({
         message: 'Kit added to cart',
         cart
@@ -75,7 +85,7 @@ exports.addToCart = async (req, res) => {
     }
 
     /* ================= EXPRESS ================= */
-    else if (product.fulfillmentModel === 'EXPRESS') {
+    if (product.fulfillmentModel === 'EXPRESS') {
       const item = cart.expressItems.find(
         (i) => i.product.toString() === productId
       );
@@ -93,10 +103,7 @@ exports.addToCart = async (req, res) => {
 
     /* ================= MARKETPLACE ================= */
     else if (product.fulfillmentModel === 'MARKETPLACE') {
-      if (
-        !product.vendor ||
-        (product.vendor.isActive === false)
-      ) {
+      if (!product.vendor || product.vendor.isActive === false) {
         return res.status(400).json({
           message: 'Vendor unavailable for this product'
         });
@@ -120,15 +127,23 @@ exports.addToCart = async (req, res) => {
 
     await cart.save();
 
+    // 🔥 IMPORTANT FIX: populate before returning
+    await cart.populate([
+      { path: 'expressItems.product' },
+      { path: 'marketplaceItems.product' }
+    ]);
+
     return res.status(200).json({
       message: 'Item added to cart',
       cart
     });
+
   } catch (error) {
     console.error('❌ ADD TO CART ERROR:', error);
     return res.status(500).json({ message: error.message });
   }
 };
+
 
 /* ======================================================
    VIEW CART
