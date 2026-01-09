@@ -28,9 +28,8 @@ exports.createProduct = async (req, res) => {
     });
   }
 };
-
 /* ======================================================
-   Search product
+   Search Product
 ====================================================== */
 
 exports.searchProducts = async (req, res) => {
@@ -41,20 +40,20 @@ exports.searchProducts = async (req, res) => {
       isActive: true,
     };
 
-    /* 🔍 SEARCH BY NAME */
-    if (q) {
-      filter.name = {
-        $regex: q,
-        $options: 'i', // case-insensitive
-      };
+    /* 🔍 TEXT SEARCH (name + category) */
+    if (q && q.trim()) {
+      filter.$or = [
+        { name: { $regex: q.trim(), $options: 'i' } },
+        { category: { $regex: q.trim(), $options: 'i' } },
+      ];
     }
 
-    /* 📂 CATEGORY */
+    /* 📂 CATEGORY FILTER */
     if (category) {
       filter.category = category;
     }
 
-    /* 🎁 KIT */
+    /* 🎁 KIT FILTER */
     if (isKit !== undefined) {
       filter.isKit = isKit === 'true';
     }
@@ -65,20 +64,22 @@ exports.searchProducts = async (req, res) => {
     }
 
     const products = await Product.find(filter)
-      .limit(50) // safety limit
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(50);
 
     return res.status(200).json({
-      message: 'Products fetched',
+      success: true,
       data: products,
     });
   } catch (error) {
     console.error('❌ SEARCH PRODUCTS ERROR:', error);
     return res.status(500).json({
-      message: 'Something went wrong',
+      success: false,
+      message: 'Failed to search products',
     });
   }
 };
+
 
 
 /* ======================================================
@@ -207,6 +208,7 @@ exports.updateProduct = async (req, res) => {
     });
   }
 };
+
 
 
 
