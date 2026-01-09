@@ -30,6 +30,58 @@ exports.createProduct = async (req, res) => {
 };
 
 /* ======================================================
+   Search product
+====================================================== */
+
+exports.searchProducts = async (req, res) => {
+  try {
+    const { q, category, isKit, fulfillmentModel } = req.query;
+
+    const filter = {
+      isActive: true,
+    };
+
+    /* 🔍 SEARCH BY NAME */
+    if (q) {
+      filter.name = {
+        $regex: q,
+        $options: 'i', // case-insensitive
+      };
+    }
+
+    /* 📂 CATEGORY */
+    if (category) {
+      filter.category = category;
+    }
+
+    /* 🎁 KIT */
+    if (isKit !== undefined) {
+      filter.isKit = isKit === 'true';
+    }
+
+    /* ⚡ DELIVERY TYPE */
+    if (fulfillmentModel) {
+      filter.fulfillmentModel = fulfillmentModel;
+    }
+
+    const products = await Product.find(filter)
+      .limit(50) // safety limit
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      message: 'Products fetched',
+      data: products,
+    });
+  } catch (error) {
+    console.error('❌ SEARCH PRODUCTS ERROR:', error);
+    return res.status(500).json({
+      message: 'Something went wrong',
+    });
+  }
+};
+
+
+/* ======================================================
    GET PRODUCTS
 ====================================================== */
 exports.getProducts = async (req, res) => {
@@ -155,5 +207,6 @@ exports.updateProduct = async (req, res) => {
     });
   }
 };
+
 
 
