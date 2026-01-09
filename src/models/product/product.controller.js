@@ -32,19 +32,28 @@ exports.createProduct = async (req, res) => {
    Search Product
 ====================================================== */
 
+
 exports.searchProducts = async (req, res) => {
   try {
     const { q, category, isKit, fulfillmentModel } = req.query;
 
-    const filter = {
-      isActive: true,
-    };
+    const filter = { isActive: true };
 
-    /* 🔍 TEXT SEARCH (name + category) */
+    /* 🔍 SMART SEARCH */
     if (q && q.trim()) {
+      const keywords = q
+        .trim()
+        .split(/\s+/)            // split by space
+        .filter(Boolean);
+
+      const regexPattern = keywords.join('|'); 
+      // fish → fish
+      // gold fish → gold|fish
+      // agarbati → agarbati
+
       filter.$or = [
-        { name: { $regex: q.trim(), $options: 'i' } },
-        { category: { $regex: q.trim(), $options: 'i' } },
+        { name: { $regex: regexPattern, $options: 'i' } },
+        { category: { $regex: regexPattern, $options: 'i' } },
       ];
     }
 
@@ -208,6 +217,7 @@ exports.updateProduct = async (req, res) => {
     });
   }
 };
+
 
 
 
