@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 
 const auth = require('../middleware/auth.middleware');
-const vendorOnly = require('../middleware/vendorOnly.middleware');
+const vendorCandidateOnly = require('../middleware/vendorCandidateOnly.middleware');
 
 // 🔥 Import split vendor controllers (barrel file)
 const vendor = require('./index');
@@ -10,7 +10,7 @@ const vendor = require('./index');
 /* ============================
    PROFILE / ONBOARDING
 ============================ */
-router.get('/me', auth, vendorOnly, vendor.profile.me);
+router.get('/me', auth, vendorCandidateOnly, vendor.profile.me);
 router.patch('/online', auth, vendorOnly, vendor.profile.toggleOnline);
 router.patch('/store', auth, vendorOnly, vendor.profile.updateStoreInfo);
 router.patch('/location', auth, vendorOnly, vendor.profile.updateLocation);
@@ -45,3 +45,4 @@ router.get('/earnings', auth, vendorOnly, vendor.earnings.getEarnings);
 router.post('/earnings/payout', auth, vendorOnly, vendor.earnings.requestPayout);
 
 module.exports = router;
+
