@@ -6,61 +6,64 @@ console.log('APP DIR:', __dirname);
 
 const app = express();
 
-/* ================= CORS ================= */
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
-
-app.options('*', cors());
+/* ================= MIDDLEWARE ================= */
+app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-/* ======================================================
-   🔥 REGISTER ALL MODELS (VERY IMPORTANT)
-   👉 This fixes: Schema hasn't been registered for model "Vendor"
-====================================================== */
+/* ================= ROUTES ================= */
+const authRoutes = require(
+  path.join(__dirname, 'models', 'auth', 'auth.routes.js')
+);
 
-// USER
-require(path.join(__dirname, 'models', 'user', 'user.model.js'));
+const userRoutes = require(
+  path.join(__dirname, 'models', 'user', 'user.routes.js')
+);
 
-// VENDOR  ✅ MUST BE BEFORE PRODUCT
-require(path.join(__dirname, 'models', 'vendor', 'vendor.model.js'));
+const cartRoutes = require(
+  path.join(__dirname, 'models', 'cart', 'cart.routes.js')
+);
 
-// PRODUCT (depends on Vendor)
-require(path.join(__dirname, 'models', 'product', 'product.model.js'));
+const checkoutRoutes = require(
+  path.join(__dirname, 'models', 'checkout', 'checkout.routes.js')
+);
 
-// CART
-require(path.join(__dirname, 'models', 'cart', 'cart.model.js'));
+const productRoutes = require(
+  path.join(__dirname, 'models', 'product', 'product.routes.js')
+);
 
-// ORDER
-require(path.join(__dirname, 'models', 'order', 'order.model.js'));
+const vendorRoutes = require(
+  path.join(__dirname, 'models', 'vendor', 'vendor.routes.js')
+);
 
+/* ================= API VERSIONING ================= */
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/user', userRoutes);
+app.use('/api/v1/cart', cartRoutes);
+app.use('/api/v1/checkout', checkoutRoutes);
+app.use('/api/v1/products', productRoutes);
+app.use('/api/v1/vendor', vendorRoutes);
 
+/* ================= HEALTH ================= */
+app.get('/health', (req, res) => {
+  return res.status(200).json({
+    status: 'OK',
+    service: 'PETALS Backend',
+    timestamp: new Date().toISOString(),
+  });
+});
 
-/* ======================================================
-   ROUTES
-====================================================== */
-const authRoutes = require(path.join(__dirname, 'models', 'auth', 'auth.routes.js'));
-const userRoutes = require(path.join(__dirname, 'models', 'user', 'user.routes.js'));
-const cartRoutes = require(path.join(__dirname, 'models', 'cart', 'cart.routes.js'));
-const checkoutRoutes = require(path.join(__dirname, 'models', 'checkout', 'checkout.routes.js'));
-const productRoutes = require(path.join(__dirname, 'models', 'product', 'product.routes.js'));
-const orderRoutes = require(path.join(__dirname, 'models', 'order', 'order.routes.js'));
-
-app.use('/auth', authRoutes);
-app.use('/user', userRoutes);
-app.use('/cart', cartRoutes);
-app.use('/checkout', checkoutRoutes);
-app.use('/products', productRoutes);
-app.use('/order', orderRoutes);
-
-
-/* ======================================================
-   ROOT
-====================================================== */
+/* ================= ROOT ================= */
 app.get('/', (req, res) => {
-  res.send('PETALS Backend is running');
+  res.send(' PETALS Backend is running');
+});
+
+/* ================= 404 HANDLER ================= */
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Route not found',
+  });
 });
 
 module.exports = app;
