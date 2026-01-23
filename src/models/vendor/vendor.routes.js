@@ -3,7 +3,7 @@ const router = express.Router();
 
 const auth = require('../middleware/auth.middleware');
 const vendorCandidateOnly = require('../middleware/vendorCandidateOnly.middleware');
-const VendorOnly = require('../middleare/VendorOnly.middleware');
+const VendorOnly = require('../middleware/VendorOnly.middleware');
 // 🔥 Import split vendor controllers (barrel file)
 const vendor = require('./index');
 
@@ -45,5 +45,6 @@ router.get('/earnings', auth, vendorOnly, vendor.earnings.getEarnings);
 router.post('/earnings/payout', auth, vendorOnly, vendor.earnings.requestPayout);
 
 module.exports = router;
+
 
 
