@@ -24,7 +24,7 @@ const VendorSchema = new mongoose.Schema(
     onboardingStatus: {
       type: String,
       enum: ['PENDING', 'APPROVED', 'REJECTED'],
-      default: 'PENDING',
+      default: 'APPROVED',
       index: true,
     },
 
@@ -127,3 +127,4 @@ const VendorSchema = new mongoose.Schema(
 VendorSchema.index({ 'location.coordinates': '2dsphere' });
 
 module.exports = mongoose.model('Vendor', VendorSchema);
+
