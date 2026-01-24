@@ -94,6 +94,14 @@ exports.updateStoreInfo = async (req, res) => {
       });
     }
 
+    // 🔥 DEV MODE AUTO-APPROVAL
+    // In production, REMOVE this block.
+    // Vendor approval must be handled by Admin Panel workflow.
+    if (vendor.onboardingStatus !== 'APPROVED') {
+      vendor.onboardingStatus = 'APPROVED';
+      await vendor.save();
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Store updated successfully',
@@ -142,12 +150,20 @@ exports.updateLocation = async (req, res) => {
       },
     };
 
+    // 🔥 DEV MODE AUTO-APPROVAL
+    // In production, REMOVE this block.
+    // Admin must verify location before approving vendor.
+    if (vendor.onboardingStatus !== 'APPROVED') {
+      vendor.onboardingStatus = 'APPROVED';
+    }
+
     await vendor.save();
 
     return res.status(200).json({
       success: true,
       message: 'Location updated successfully',
       location: vendor.location,
+      onboardingStatus: vendor.onboardingStatus,
     });
   } catch (error) {
     console.error('❌ UPDATE LOCATION ERROR:', error);
@@ -172,25 +188,36 @@ exports.updatePayoutDetails = async (req, res) => {
       });
     }
 
-    const vendor = await Vendor.findByIdAndUpdate(
-      req.user._id,
-      {
-        $set: {
-          payout: {
-            bankName,
-            accountNumber,
-            ifsc,
-            holderName,
-          },
-        },
-      },
-      { new: true }
-    );
+    const vendor = await Vendor.findById(req.user._id);
+
+    if (!vendor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vendor not found',
+      });
+    }
+
+    vendor.payout = {
+      bankName,
+      accountNumber,
+      ifsc,
+      holderName,
+    };
+
+    // 🔥 DEV MODE AUTO-APPROVAL
+    // In production, REMOVE this block.
+    // Admin must verify bank details before approving vendor.
+    if (vendor.onboardingStatus !== 'APPROVED') {
+      vendor.onboardingStatus = 'APPROVED';
+    }
+
+    await vendor.save();
 
     return res.status(200).json({
       success: true,
       message: 'Payout details updated',
       payout: vendor.payout,
+      onboardingStatus: vendor.onboardingStatus,
     });
   } catch (error) {
     console.error('❌ PAYOUT ERROR:', error);
