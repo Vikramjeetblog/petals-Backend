@@ -39,6 +39,8 @@ router.post('/orders/:orderId/ready', auth, vendorOnly, vendor.orders.markReady)
 ============================ */
 router.get('/products', auth, vendorOnly, vendor.products.getProducts);
 router.post('/products/:id/toggle-stock', auth, vendorOnly, vendor.products.toggleStock);
+router.post('/products', auth, vendorOnly, vendor.products.createProduct);
+router.delete('/products/:id', auth, vendorOnly, vendor.products.deleteProduct);
 
 /* ============================
    EARNINGS (APPROVED ONLY)
@@ -47,3 +49,4 @@ router.get('/earnings', auth, vendorOnly, vendor.earnings.getEarnings);
 router.post('/earnings/payout', auth, vendorOnly, vendor.earnings.requestPayout);
 
 module.exports = router;
+
