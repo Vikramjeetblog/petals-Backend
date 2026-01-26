@@ -66,13 +66,13 @@ exports.toggleStock = async (req, res) => {
 };
 
 /* ======================================================
-   (OPTIONAL — FUTURE)
+  
    CREATE PRODUCT
 ====================================================== */
 exports.createProduct = async (req, res) => {
   try {
     const vendorId = req.user._id;
-    const { name, category, price, image } = req.body;
+    const { name, category, price, image, description } = req.body;
 
     if (!name || !category || !price) {
       return res.status(400).json({
@@ -83,11 +83,13 @@ exports.createProduct = async (req, res) => {
 
     const product = await Product.create({
       vendor: vendorId,
-      name,
-      category,
-      price,
-      image,
+      name: name.trim(),
+      category: category.trim(),
+      description: description || '',
+      price: Number(price),
+      image: image || null,
       inStock: true,
+      fulfillmentModel: 'MARKETPLACE', 
     });
 
     return res.status(201).json({
@@ -96,10 +98,10 @@ exports.createProduct = async (req, res) => {
       data: product,
     });
   } catch (error) {
-    console.error('❌ CREATE PRODUCT ERROR:', error);
+    console.error(' CREATE PRODUCT ERROR:', error);
     return res.status(500).json({
       success: false,
-      message: 'Failed to create product',
+      message: error.message || 'Failed to create product',
     });
   }
 };
@@ -137,3 +139,4 @@ exports.deleteProduct = async (req, res) => {
     });
   }
 };
+
