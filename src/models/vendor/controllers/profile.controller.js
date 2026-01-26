@@ -32,8 +32,17 @@ exports.me = async (req, res) => {
 /* ======================================================
    TOGGLE ONLINE / OFFLINE STATUS
 ====================================================== */
-exports.toggleOnline = async (req, res) => {
+exports.setOnlineStatus = async (req, res) => {
   try {
+    const { isOnline } = req.body;
+
+    if (typeof isOnline !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isOnline must be true or false',
+      });
+    }
+
     const vendor = await Vendor.findById(req.user._id);
 
     if (!vendor) {
@@ -43,8 +52,11 @@ exports.toggleOnline = async (req, res) => {
       });
     }
 
-    vendor.isOnline = !vendor.isOnline;
-    await vendor.save();
+    // Only update if changed
+    if (vendor.isOnline !== isOnline) {
+      vendor.isOnline = isOnline;
+      await vendor.save();
+    }
 
     return res.status(200).json({
       success: true,
@@ -52,7 +64,7 @@ exports.toggleOnline = async (req, res) => {
       isOnline: vendor.isOnline,
     });
   } catch (error) {
-    console.error('❌ TOGGLE ONLINE ERROR:', error);
+    console.error('❌ SET ONLINE ERROR:', error);
     return res.status(500).json({
       success: false,
       message: 'Failed to update vendor status',
@@ -227,3 +239,4 @@ exports.updatePayoutDetails = async (req, res) => {
     });
   }
 };
+
