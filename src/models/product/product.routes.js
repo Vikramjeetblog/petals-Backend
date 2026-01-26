@@ -1,3 +1,4 @@
+const express = require('express');
 const router = express.Router();
 
 //  correct relative path
@@ -8,3 +9,4 @@ router.get("/", productController.getProducts);
 router.put("/:id", productController.updateProduct);
 
 module.exports = router;
+
