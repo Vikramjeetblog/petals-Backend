@@ -1,14 +1,10 @@
-const express = require("express");
 const router = express.Router();
-const authMiddleware = require('../middleware/auth.middleware');
+
+//  correct relative path
 const productController = require("./product.controller");
 
-
-router.post("/", authMiddleware, productController.createProduct);
-router.get("/",  authMiddleware, productController.getProducts);
-router.put("/:id",  authMiddleware, productController.updateProduct);
-router.patch("/:id/toggle",  authMiddleware, productController.toggleProduct);
+router.post("/", productController.createProduct);
+router.get("/", productController.getProducts);
+router.put("/:id", productController.updateProduct);
 
 module.exports = router;
-
-
