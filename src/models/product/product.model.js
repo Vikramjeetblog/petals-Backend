@@ -1,4 +1,4 @@
-
+const mongoose = require('mongoose');
 const ProductSchema = new mongoose.Schema(
   {
     /* ================= BASIC INFO ================= */
@@ -122,3 +122,4 @@ ProductSchema.pre('save', function (next) {
 
 
 module.exports = mongoose.model('Product', ProductSchema);   const express = require("express");
+
