@@ -13,7 +13,7 @@ const vendor = require('./index');
 router.get('/me', auth, vendorCandidateOnly, vendor.profile.me);
 
 // onboarding steps should be allowed for PENDING vendors
-router.patch('/online', auth, vendorCandidateOnly, vendor.profile.toggleOnline);
+router.patch('/online', auth, vendorCandidateOnly, vendor.profile.setOnlineStatus);
 router.patch('/store', auth, vendorCandidateOnly, vendor.profile.updateStoreInfo);
 router.patch('/location', auth, vendorCandidateOnly, vendor.profile.updateLocation);
 router.patch('/payout', auth, vendorCandidateOnly, vendor.profile.updatePayoutDetails);
@@ -49,4 +49,5 @@ router.get('/earnings', auth, vendorOnly, vendor.earnings.getEarnings);
 router.post('/earnings/payout', auth, vendorOnly, vendor.earnings.requestPayout);
 
 module.exports = router;
+
 
