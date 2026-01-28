@@ -139,4 +139,54 @@ exports.deleteProduct = async (req, res) => {
     });
   }
 };
+/* ======================================================
+   UPDATE PRODUCT
+====================================================== */
+exports.updateProduct = async (req, res) => {
+  try {
+    const vendorId = req.user._id;
+    const { id } = req.params;
+
+    const allowedFields = [
+      'name',
+      'category',
+      'price',
+      'description',
+      'image',
+    ];
+
+    const updates = {};
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    });
+
+    const product = await Product.findOneAndUpdate(
+      { _id: id, vendor: vendorId },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Product updated',
+      data: product,
+    });
+  } catch (error) {
+    console.error('❌ UPDATE PRODUCT ERROR:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update product',
+    });
+  }
+};
+
 
