@@ -90,6 +90,12 @@ const VendorSchema = new mongoose.Schema(
       default: true,
     },
 
+    lastSeen: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
+
     autoAcceptOrders: {
       type: Boolean,
       default: true,
@@ -127,4 +133,3 @@ const VendorSchema = new mongoose.Schema(
 VendorSchema.index({ 'location.coordinates': '2dsphere' });
 
 module.exports = mongoose.model('Vendor', VendorSchema);
-
