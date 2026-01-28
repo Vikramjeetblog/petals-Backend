@@ -1,4 +1,5 @@
-const Vendor = require('../vendor/vendor.model');
+const Vendor = require('../models/vendor/vendor.model');
+
 
 const CHECK_INTERVAL = 30 * 1000; // 30s
 const TIMEOUT = 60 * 1000; // 60s
