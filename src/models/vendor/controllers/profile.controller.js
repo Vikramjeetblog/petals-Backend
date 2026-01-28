@@ -3,6 +3,30 @@ const Vendor = require('../vendor.model');
 /* ======================================================
    GET VENDOR PROFILE (ONBOARDING + HEADER INFO)
 ====================================================== */
+
+
+exports.heartbeat = async (req, res) => {
+  try {
+    const vendorId = req.user._id;
+
+    await Vendor.findByIdAndUpdate(vendorId, {
+      lastSeen: new Date(),
+      isOnline: true
+    });
+
+    return res.json({
+      success: true,
+      message: 'Heartbeat received'
+    });
+  } catch (err) {
+    console.error('HEARTBEAT ERROR:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Heartbeat failed'
+    });
+  }
+};
+
 exports.me = async (req, res) => {
   try {
     const vendor = await Vendor.findById(req.user._id).select(
@@ -239,4 +263,5 @@ exports.updatePayoutDetails = async (req, res) => {
     });
   }
 };
+
 
