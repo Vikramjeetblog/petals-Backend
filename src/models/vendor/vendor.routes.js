@@ -10,6 +10,8 @@ const vendor = require('./index');
 /* ============================
    PROFILE / ONBOARDING
 ============================ */
+router.post('/heartbeat', auth, vendorOnly, vendor.profile.heartbeat);
+
 router.get('/me', auth, vendorCandidateOnly, vendor.profile.me);
 
 // onboarding steps should be allowed for PENDING vendors
@@ -50,6 +52,7 @@ router.get('/earnings', auth, vendorOnly, vendor.earnings.getEarnings);
 router.post('/earnings/payout', auth, vendorOnly, vendor.earnings.requestPayout);
 
 module.exports = router;
+
 
 
 
