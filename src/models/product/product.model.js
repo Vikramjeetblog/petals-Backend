@@ -1,18 +1,48 @@
 const mongoose = require('mongoose');
+
+
+
 const ProductSchema = new mongoose.Schema(
   {
     /* ================= BASIC INFO ================= */
     name: {
       type: String,
-      required: true,
+      required: [true, 'Product name is required'],
+      trim: true,
+      index: true,
+    },
+
+    slug: {
+      type: String,
+      lowercase: true,
+      index: true,
+    },
+
+    description: {
+      type: String,
+      default: '',
+      trim: true,
     },
 
     price: {
       type: Number,
-      required: true,
+      required: [true, 'Product price is required'],
+      min: [0, 'Price must be a positive number'],
     },
 
-    /* ================= FULFILLMENT (CORE) ================= */
+    category: {
+      type: String,
+      required: [true, 'Category is required'],
+      index: true,
+      trim: true,
+    },
+
+    image: {
+      type: String,
+      default: null,
+    },
+
+    /* ================= FULFILLMENT ================= */
     fulfillmentModel: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
@@ -25,6 +55,7 @@ const ProductSchema = new mongoose.Schema(
       maxMinutes: { type: Number },
     },
 
+    /* ================= FLAGS ================= */
     flags: {
       perishable: { type: Boolean, default: false },
       fragile: { type: Boolean, default: false },
@@ -38,7 +69,7 @@ const ProductSchema = new mongoose.Schema(
     },
 
     kitData: {
-      occasion: { type: String }, // e.g. Laxmi Puja
+      occasion: { type: String, trim: true },
       items: [
         {
           productId: {
@@ -47,6 +78,7 @@ const ProductSchema = new mongoose.Schema(
           },
           quantity: {
             type: Number,
+            min: 1,
             default: 1,
           },
         },
@@ -54,35 +86,73 @@ const ProductSchema = new mongoose.Schema(
     },
 
     /* ================= MARKETPLACE ================= */
-    // only for MARKETPLACE products
     vendor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vendor',
       default: null,
+      index: true,
     },
 
     /* ================= STATUS ================= */
+    inStock: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
   },
   { timestamps: true }
 );
 
+/* ======================================================
+   INDEXES
+====================================================== */
+
+ProductSchema.index({ name: 'text', category: 'text' });
+ProductSchema.index({ vendor: 1, isActive: 1 });
+ProductSchema.index({ fulfillmentModel: 1, inStock: 1 });
+
+/* ======================================================
+   HELPERS
+====================================================== */
+
+function slugify(text) {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/* ======================================================
+   PRE-SAVE HOOK
+   (Callback-style = SAFE with next())
+====================================================== */
+
 ProductSchema.pre('save', function (next) {
-  /* EXPRESS RULES */
+  /* ========== SLUG ========== */
+  if (this.isModified('name') || !this.slug) {
+    this.slug = slugify(this.name);
+  }
+
+  /* ========== EXPRESS RULES ========== */
   if (this.fulfillmentModel === 'EXPRESS') {
     this.deliveryPromise = { minMinutes: 12, maxMinutes: 20 };
 
-    if (this.flags.liveAnimal) {
+    if (this.flags?.liveAnimal) {
       return next(
         new Error('Live animals cannot be EXPRESS products')
       );
     }
   }
 
-  /* MARKETPLACE RULES */
+  /* ========== MARKETPLACE RULES ========== */
   if (this.fulfillmentModel === 'MARKETPLACE') {
     if (!this.vendor) {
       return next(
@@ -98,11 +168,11 @@ ProductSchema.pre('save', function (next) {
     }
   }
 
-  /* KIT RULES */
+  /* ========== KIT RULES ========== */
   if (this.isKit) {
     if (
       !this.kitData ||
-      !this.kitData.items ||
+      !Array.isArray(this.kitData.items) ||
       this.kitData.items.length === 0
     ) {
       return next(
@@ -120,6 +190,8 @@ ProductSchema.pre('save', function (next) {
   next();
 });
 
+/* ======================================================
+   EXPORT
+====================================================== */
 
-module.exports = mongoose.model('Product', ProductSchema);   const express = require("express");
-
+module.exports = mongoose.model('Product', ProductSchema);
