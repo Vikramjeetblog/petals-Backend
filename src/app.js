@@ -44,6 +44,9 @@ app.use('/api/v1/checkout', checkoutRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/vendor', vendorRoutes);
 
+/* ================= WORKERS ================= */
+require('./workers/vendorOffline.worker')();
+
 /* ================= HEALTH ================= */
 app.get('/health', (req, res) => {
   return res.status(200).json({
