@@ -1,6 +1,5 @@
 const Vendor = require('../models/vendor/vendor.model');
 
-
 const CHECK_INTERVAL = 30 * 1000; // 30s
 const TIMEOUT = 60 * 1000; // 60s
 
@@ -8,19 +7,19 @@ async function checkOfflineVendors() {
   try {
     const cutoff = new Date(Date.now() - TIMEOUT);
 
-    const staleVendors = await Vendor.find({
-      isOnline: true,
-      lastSeen: { $lt: cutoff }
-    });
+    const result = await Vendor.updateMany(
+      {
+        isOnline: true,
+        lastSeen: { $lt: cutoff },
+      },
+      {
+        $set: { isOnline: false },
+      }
+    );
 
-    for (const vendor of staleVendors) {
-      vendor.isOnline = false;
-      await vendor.save();
-
+    if (result.modifiedCount > 0) {
       console.log(
-        ' AUTO OFFLINE:',
-        vendor.storeName,
-        vendor._id.toString()
+        ` AUTO OFFLINE: ${result.modifiedCount} vendors`
       );
     }
   } catch (err) {
