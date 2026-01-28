@@ -132,10 +132,10 @@ function slugify(text) {
 
 /* ======================================================
    PRE-SAVE HOOK
-   (Callback-style = SAFE with next())
+   (MONGOOSE 8+ SAFE — PROMISE STYLE)
 ====================================================== */
 
-ProductSchema.pre('save', function (next) {
+ProductSchema.pre('save', async function () {
   /* ========== SLUG ========== */
   if (this.isModified('name') || !this.slug) {
     this.slug = slugify(this.name);
@@ -146,18 +146,14 @@ ProductSchema.pre('save', function (next) {
     this.deliveryPromise = { minMinutes: 12, maxMinutes: 20 };
 
     if (this.flags?.liveAnimal) {
-      return next(
-        new Error('Live animals cannot be EXPRESS products')
-      );
+      throw new Error('Live animals cannot be EXPRESS products');
     }
   }
 
   /* ========== MARKETPLACE RULES ========== */
   if (this.fulfillmentModel === 'MARKETPLACE') {
     if (!this.vendor) {
-      return next(
-        new Error('Marketplace product must have a vendor')
-      );
+      throw new Error('Marketplace product must have a vendor');
     }
 
     if (!this.deliveryPromise?.minMinutes) {
@@ -175,23 +171,13 @@ ProductSchema.pre('save', function (next) {
       !Array.isArray(this.kitData.items) ||
       this.kitData.items.length === 0
     ) {
-      return next(
-        new Error('Kit must contain at least one item')
-      );
+      throw new Error('Kit must contain at least one item');
     }
 
     if (this.fulfillmentModel !== 'EXPRESS') {
-      return next(
-        new Error('Puja kits must be EXPRESS')
-      );
+      throw new Error('Puja kits must be EXPRESS');
     }
   }
-
-  next();
 });
-
-/* ======================================================
-   EXPORT
-====================================================== */
 
 module.exports = mongoose.model('Product', ProductSchema);
