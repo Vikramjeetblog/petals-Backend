@@ -83,24 +83,31 @@ exports.acceptOrder = async (req, res) => {
       return res.status(403).json({ message: 'Vendor offline or inactive' });
     }
 
-    const order = await Order.findOne({
-      _id: orderId,
-      vendor: vendorId,
-      status: 'PLACED',
-    });
+    const now = new Date();
+    const estimatedReadyAt = new Date(
+      now.getTime() + Number(prepTime) * 60000
+    );
+
+    const order = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        vendor: vendorId,
+        status: 'PLACED',
+      },
+      {
+        $set: {
+          status: 'ACCEPTED',
+          acceptedAt: now,
+          prepTimeMinutes: Number(prepTime),
+          estimatedReadyAt,
+        },
+      },
+      { new: true }
+    );
 
     if (!order) {
       return res.status(400).json({ message: 'Order cannot be accepted' });
     }
-
-    const now = new Date();
-
-    order.status = 'ACCEPTED';
-    order.acceptedAt = now;
-    order.prepTimeMinutes = Number(prepTime);
-    order.estimatedReadyAt = new Date(now.getTime() + prepTime * 60000);
-
-    await order.save();
 
     return res.json({ message: 'Order accepted', order });
   } catch (error) {
@@ -196,3 +203,36 @@ exports.markReady = async (req, res) => {
     return res.status(500).json({ message: 'Failed to update order' });
   }
 };
+exports.markDelivered = async (req, res) => {
+  try {
+    const vendorId = req.user._id;
+    const { orderId } = req.params;
+
+    const order = await Order.findOneAndUpdate(
+      {
+        _id: orderId,
+        vendor: vendorId,
+        status: 'READY',
+      },
+      {
+        $set: {
+          status: 'DELIVERED',
+          deliveredAt: new Date(),
+        },
+      },
+      { new: true }
+    );
+
+    if (!order) {
+      return res.status(400).json({
+        message: 'Order must be READY first',
+      });
+    }
+
+    return res.json({ message: 'Order delivered', order });
+  } catch (error) {
+    console.error('❌ DELIVER ERROR:', error);
+    return res.status(500).json({ message: 'Failed to update order' });
+  }
+};
+
