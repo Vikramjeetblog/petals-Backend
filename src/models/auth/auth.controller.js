@@ -40,7 +40,10 @@ exports.sendOtp = async (req, res) => {
  */
 exports.verifyOtp = async (req, res) => {
   try {
-    const { phone, otp, role = 'CUSTOMER' } = req.body;
+    let { phone, otp, role = 'CUSTOMER' } = req.body;
+
+    // Normalize role
+    role = role.toUpperCase();
 
     if (!phone || !otp) {
       return res.status(400).json({
@@ -54,14 +57,15 @@ exports.verifyOtp = async (req, res) => {
       return res.status(400).json({ message: 'Invalid OTP' });
     }
 
-    let entity;
+    let entity = null;
 
     if (role === 'CUSTOMER') {
       entity = await User.findOne({ phone });
-      if (!entity) entity = await User.create({ phone });
-    }
-
-    if (role === 'VENDOR') {
+      if (!entity) {
+        entity = await User.create({ phone });
+      }
+    } 
+    else if (role === 'VENDOR') {
       entity = await Vendor.findOne({ phone });
       if (!entity) {
         entity = await Vendor.create({
@@ -70,6 +74,21 @@ exports.verifyOtp = async (req, res) => {
           storeName: 'My Store'
         });
       }
+    } 
+    else {
+      return res.status(400).json({ message: 'Invalid role type' });
+    }
+
+    //  safety check
+    if (!entity) {
+      console.error(" ENTITY NOT CREATED");
+      return res.status(500).json({ message: "User creation failed" });
+    }
+
+    // JWT safety
+    if (!process.env.JWT_SECRET) {
+      console.error(" JWT_SECRET MISSING");
+      return res.status(500).json({ message: "Server configuration error" });
     }
 
     const token = jwt.sign(
@@ -81,6 +100,8 @@ exports.verifyOtp = async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    console.log(" OTP VERIFIED + TOKEN SENT");
+
     return res.status(200).json({
       message: 'Login successful',
       token,
@@ -90,6 +111,9 @@ exports.verifyOtp = async (req, res) => {
 
   } catch (error) {
     console.error(' VERIFY OTP ERROR:', error);
-    return res.status(500).json({ message: 'Something went wrong' });
+    return res.status(500).json({ 
+      message: 'Something went wrong',
+      error: error.message
+    });
   }
 };
