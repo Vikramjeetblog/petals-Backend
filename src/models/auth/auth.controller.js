@@ -1,20 +1,20 @@
 
-+const Otp = require('./otp.service');
-+const User = require('../user/user.model');
-+const jwt = require('jsonwebtoken');
-+const Vendor = require("../vendor/vendor.model");
-+const Rider = require('../rider/rider.model');
-+
-+
-+/**
-+ * SEND OTP
-+ */
-+exports.sendOtp = async (req, res) => {
-+  try {
-+    const { phone, role = 'CUSTOMER' } = req.body;
-+    const normalizedRole = role.toUpperCase();
-+
-+    if (!phone) {
+const Otp = require('./otp.service');
+const User = require('../user/user.model');
+const jwt = require('jsonwebtoken');
+const Vendor = require("../vendor/vendor.model");
+const Rider = require('../rider/rider.model');
+
+
+/**
+ * SEND OTP
+ */
+exports.sendOtp = async (req, res) => {
+  try {
+    const { phone, role = 'CUSTOMER' } = req.body;
+    const normalizedRole = role.toUpperCase();
+
+    if (!phone) {
 +      return res.status(400).json({ message: 'Phone number is required' });
 +    }
 +
@@ -109,23 +109,24 @@
 +        role
 +      },
 +      process.env.JWT_SECRET,
-+      { expiresIn: '7d' }
-+    );
-+
-+    console.log(" OTP VERIFIED + TOKEN SENT");
-+
-+    return res.status(200).json({
-+      message: 'Login successful',
-+      token,
-+      role,
-+      data: entity
-+    });
-+
-+  } catch (error) {
-+    console.error(' VERIFY OTP ERROR:', error);
-+    return res.status(500).json({ 
-+      message: 'Something went wrong',
-+      error: error.message
-+    });
-+  }
-+};
+     { expiresIn: '7d' }
+    );
+
+    console.log(" OTP VERIFIED + TOKEN SENT");
+
+   return res.status(200).json({
+     message: 'Login successful',
+     token,
+     role,
+      data: entity
+    });
+
+  } catch (error) {
+    console.error(' VERIFY OTP ERROR:', error);
+    return res.status(500).json({ 
+      message: 'Something went wrong',
+      error: error.message
+    });
+  }
+};
+
