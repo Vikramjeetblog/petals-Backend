@@ -36,6 +36,10 @@ const vendorRoutes = require(
   path.join(__dirname, 'models', 'vendor', 'vendor.routes.js')
 );
 
+const riderRoutes = require(
+  path.join(__dirname, 'models', 'rider', 'rider.routes.js')
+);
+
 /* ================= API VERSIONING ================= */
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/user', userRoutes);
@@ -43,6 +47,7 @@ app.use('/api/v1/cart', cartRoutes);
 app.use('/api/v1/checkout', checkoutRoutes);
 app.use('/api/v1/products', productRoutes);
 app.use('/api/v1/vendor', vendorRoutes);
+app.use('/api/v1/rider', riderRoutes);
 
 /* ================= WORKERS ================= */
 require('./workers/vendorOffline.worker')(); 
