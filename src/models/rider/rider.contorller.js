@@ -124,28 +124,24 @@ exports.updateProfile = async (req, res) => {
    }
  };
  
- exports.updateAvailability = async (req, res) => {
-   try {
-     const { isOnline, isAvailable } = req.body;
- 
-     if (typeof isOnline !== 'boolean' && typeof isAvailable !== 'boolean') {
-     return res.status(400).json({
-       message: 'Provide isOnline or isAvailable as boolean',
-      });
-      return failure(res, 'Provide isOnline or isAvailable as boolean', 'INVALID_AVAILABILITY');
-     }
- 
-   if (typeof isOnline === 'boolean') {
-     req.user.isOnline = isOnline;
-   if (typeof isOnline === 'boolean') req.user.isOnline = isOnline;
-   if (typeof isAvailable === 'boolean') req.user.isAvailable = isAvailable;
+exports.updateAvailability = async (req, res) => {
+  try {
+    const { isOnline, isAvailable } = req.body;
+
+    if (typeof isOnline !== 'boolean' && typeof isAvailable !== 'boolean')
+      return failure(res, 'Provide boolean values');
+
+    if (typeof isOnline === 'boolean')
+      req.user.isOnline = isOnline;
+
+    if (typeof isAvailable === 'boolean')
+      req.user.isAvailable = isAvailable;
 
     await req.user.save();
-
     return success(res, req.user);
-  } catch (error) {
-   console.error('RIDER AVAILABILITY UPDATE ERROR:', error);
-   return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  } catch (err) {
+    console.error(err);
+    return failure(res, 'Server error', 'INTERNAL_ERROR', 500);
   }
 };
 
