@@ -35,12 +35,21 @@ const SensitiveInfoSchema = new mongoose.Schema({
    },
    vehicleType: {
      type: String,
+   enum: ['BIKE', 'VAN', null],
      default: null,
    },
    vehicleNumber: {
      type: String,
      default: null,
     },
+    canHandleFragile: {
+     type: Boolean,
+     default: false,
+   },
+   canHandleLiveAnimal: {
+     type: Boolean,
+     default: false,
+   }
     rating: {
       type: Number,
       default: 5,
