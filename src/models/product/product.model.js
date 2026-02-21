@@ -1,13 +1,26 @@
 const mongoose = require('mongoose');
 
+/* ================= LOGISTICS FLAGS ================= */
 
+const LogisticsSchema = new mongoose.Schema(
+  {
+    perishable: { type: Boolean, default: false },
+    fragile: { type: Boolean, default: false },
+    liveAnimal: { type: Boolean, default: false },
+    handleWithCare: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+/* ================= PRODUCT ================= */
 
 const ProductSchema = new mongoose.Schema(
   {
-    /* ================= BASIC INFO ================= */
+    /* ---------- BASIC INFO ---------- */
+
     name: {
       type: String,
-      required: [true, 'Product name is required'],
+      required: true,
       trim: true,
       index: true,
     },
@@ -26,15 +39,15 @@ const ProductSchema = new mongoose.Schema(
 
     price: {
       type: Number,
-      required: [true, 'Product price is required'],
-      min: [0, 'Price must be a positive number'],
+      required: true,
+      min: 0,
     },
 
     category: {
       type: String,
-      required: [true, 'Category is required'],
-      index: true,
+      required: true,
       trim: true,
+      index: true,
     },
 
     image: {
@@ -42,7 +55,8 @@ const ProductSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* ================= FULFILLMENT ================= */
+    /* ---------- FULFILLMENT ---------- */
+
     fulfillmentModel: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
@@ -51,25 +65,34 @@ const ProductSchema = new mongoose.Schema(
     },
 
     deliveryPromise: {
-      minMinutes: { type: Number },
-      maxMinutes: { type: Number },
+      minMinutes: Number,
+      maxMinutes: Number,
     },
 
-    /* ================= FLAGS ================= */
+    /* ---------- LOGISTICS ---------- */
+
     flags: {
-      perishable: { type: Boolean, default: false },
-      fragile: { type: Boolean, default: false },
-      liveAnimal: { type: Boolean, default: false },
+      type: LogisticsSchema,
+      default: () => ({}),
     },
 
-    /* ================= KIT BUILDER ================= */
+    logisticsFlag: {
+      type: String,
+      enum: ['FRAGILE', 'LIVE_ANIMAL'],
+      default: null,
+      index: true,
+    },
+
+    /* ---------- KIT BUILDER ---------- */
+
     isKit: {
       type: Boolean,
       default: false,
+      index: true,
     },
 
     kitData: {
-      occasion: { type: String, trim: true },
+      occasion: String,
       items: [
         {
           productId: {
@@ -85,7 +108,8 @@ const ProductSchema = new mongoose.Schema(
       ],
     },
 
-    /* ================= MARKETPLACE ================= */
+    /* ---------- MARKETPLACE ---------- */
+
     vendor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vendor',
@@ -93,7 +117,8 @@ const ProductSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ================= STATUS ================= */
+    /* ---------- STATUS ---------- */
+
     inStock: {
       type: Boolean,
       default: true,
@@ -109,48 +134,52 @@ const ProductSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ======================================================
-   INDEXES
-====================================================== */
+/* ================= INDEXES ================= */
 
 ProductSchema.index({ name: 'text', category: 'text' });
 ProductSchema.index({ vendor: 1, isActive: 1 });
 ProductSchema.index({ fulfillmentModel: 1, inStock: 1 });
+ProductSchema.index({ logisticsFlag: 1 });
 
-/* ======================================================
-   HELPERS
-====================================================== */
+/* ================= HELPERS ================= */
 
 function slugify(text) {
   return text
-    .toString()
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
 
-/* ======================================================
-   PRE-SAVE HOOK
-   (MONGOOSE 8+ SAFE — PROMISE STYLE)
-====================================================== */
+/* ================= PRE-SAVE ================= */
 
 ProductSchema.pre('save', async function () {
-  /* ========== SLUG ========== */
+  /* SLUG */
   if (this.isModified('name') || !this.slug) {
     this.slug = slugify(this.name);
   }
 
-  /* ========== EXPRESS RULES ========== */
+  /* SYNC LOGISTICS */
+  if (this.logisticsFlag === 'FRAGILE') {
+    this.flags.fragile = true;
+    this.flags.handleWithCare = true;
+  }
+
+  if (this.logisticsFlag === 'LIVE_ANIMAL') {
+    this.flags.liveAnimal = true;
+    this.flags.handleWithCare = true;
+  }
+
+  /* EXPRESS RULES */
   if (this.fulfillmentModel === 'EXPRESS') {
     this.deliveryPromise = { minMinutes: 12, maxMinutes: 20 };
 
-    if (this.flags?.liveAnimal) {
+    if (this.flags.liveAnimal) {
       throw new Error('Live animals cannot be EXPRESS products');
     }
   }
 
-  /* ========== MARKETPLACE RULES ========== */
+  /* MARKETPLACE RULES */
   if (this.fulfillmentModel === 'MARKETPLACE') {
     if (!this.vendor) {
       throw new Error('Marketplace product must have a vendor');
@@ -164,13 +193,9 @@ ProductSchema.pre('save', async function () {
     }
   }
 
-  /* ========== KIT RULES ========== */
+  /* KIT RULES */
   if (this.isKit) {
-    if (
-      !this.kitData ||
-      !Array.isArray(this.kitData.items) ||
-      this.kitData.items.length === 0
-    ) {
+    if (!this.kitData?.items?.length) {
       throw new Error('Kit must contain at least one item');
     }
 
