@@ -267,3 +267,353 @@ exports.addDeliveryProof = async (req, res) => {
     return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
   }
 };
+/* ======================================================
+   AUTH SESSION
+====================================================== */
+
+exports.me = async (req, res) => {
+  return success(res, req.user);
+};
+
+exports.logout = async (req, res) => {
+  // Stateless JWT logout (client deletes token)
+  return success(res, { message: 'Logged out successfully' });
+};
+
+/* ======================================================
+   SENSITIVE INFO
+====================================================== */
+
+exports.getSensitiveInfo = async (req, res) => {
+  const rider = await Rider.findById(req.user._id).select('+sensitiveInfo');
+  if (!rider)
+    return failure(res, 'Rider not found', 'NOT_FOUND', 404);
+
+  return success(res, rider.getMaskedSensitiveInfo());
+};
+
+exports.updateSensitiveInfo = async (req, res) => {
+  try {
+    const { bankAccountNumber, drivingLicenseNumber, bankIfscCode } = req.body;
+
+    if (!bankAccountNumber && !drivingLicenseNumber && !bankIfscCode)
+      return failure(res, 'No sensitive fields provided');
+
+    req.user.setSensitiveInfo({
+      bankAccountNumber,
+      drivingLicenseNumber,
+      bankIfscCode,
+    });
+
+    await req.user.save();
+    return success(res, req.user.getMaskedSensitiveInfo());
+  } catch (error) {
+    console.error('SENSITIVE UPDATE ERROR:', error);
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  }
+};
+
+/* ======================================================
+   ORDER DETAIL
+====================================================== */
+
+exports.getOrderById = async (req, res) => {
+  try {
+    const order = await RiderOrder.findOne({
+      _id: req.params.orderId,
+      rider: req.user._id,
+    });
+
+    if (!order)
+      return failure(res, 'Order not found', 'NOT_FOUND', 404);
+
+    return success(res, order);
+  } catch (error) {
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  }
+};
+
+/* ======================================================
+   EARNINGS
+====================================================== */
+
+exports.getEarningsSummary = async (req, res) => {
+  try {
+    const range = req.query.range || 'today';
+    const now = new Date();
+    const start = new Date(now);
+
+    if (range === 'today') start.setHours(0, 0, 0, 0);
+    if (range === 'week') start.setDate(now.getDate() - 7);
+    if (range === 'month') start.setMonth(now.getMonth() - 1);
+
+    const delivered = await RiderOrder.find({
+      rider: req.user._id,
+      status: 'delivered',
+      updatedAt: { $gte: start },
+    }).lean();
+
+    const total = delivered.reduce(
+      (sum, o) => sum + (o.earning || 0),
+      0
+    );
+
+    return success(res, {
+      range,
+      totalEarning: total,
+      deliveriesCount: delivered.length,
+      avgPerJob: delivered.length
+        ? Number((total / delivered.length).toFixed(2))
+        : 0,
+    });
+  } catch (err) {
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  }
+};
+
+exports.getEarningsActivity = async (req, res) => {
+  try {
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
+
+    const filter = {
+      rider: req.user._id,
+      status: 'delivered',
+    };
+
+    const [rows, total] = await Promise.all([
+      RiderOrder.find(filter)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      RiderOrder.countDocuments(filter),
+    ]);
+
+    return success(res, {
+      meta: { total, page, pages: Math.ceil(total / limit) },
+      rows,
+    });
+  } catch (err) {
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  }
+};
+
+/* ======================================================
+   WALLET
+====================================================== */
+
+exports.getWallet = async (req, res) =>
+  success(res, req.user.wallet || { available: 0, pending: 0 });
+
+exports.getPayouts = async (req, res) =>
+  success(
+    res,
+    (req.user.payouts || []).sort(
+      (a, b) => new Date(b.date) - new Date(a.date)
+    )
+  );
+
+exports.withdrawPayout = async (req, res) => {
+  try {
+    const { amount, bankAccountId } = req.body;
+
+    if (!amount || Number(amount) <= 0)
+      return failure(res, 'Invalid amount');
+
+    if ((req.user.wallet?.available || 0) < amount)
+      return failure(res, 'Insufficient balance');
+
+    const bank = (req.user.bankAccounts || []).find(
+      (b) => String(b._id) === String(bankAccountId)
+    );
+
+    if (!bank)
+      return failure(res, 'Bank account not found', 'NOT_FOUND', 404);
+
+    req.user.wallet.available -= Number(amount);
+    req.user.payouts.push({
+      amount: Number(amount),
+      status: 'PENDING',
+      date: new Date(),
+      bankAccountId,
+    });
+
+    await req.user.save();
+    return success(res, { message: 'Withdrawal request submitted' }, 201);
+  } catch (err) {
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  }
+};
+
+/* ======================================================
+   BANK ACCOUNTS
+====================================================== */
+
+exports.getBankAccounts = async (req, res) =>
+  success(res, req.user.bankAccounts || []);
+
+exports.addBankAccount = async (req, res) => {
+  const { bankName, accountHolderName, accountNumber, ifscCode } = req.body;
+
+  if (!bankName || !accountHolderName || !accountNumber || !ifscCode)
+    return failure(res, 'Missing fields');
+
+  req.user.bankAccounts.push({
+    bankName,
+    accountHolderName,
+    accountNumber,
+    ifscCode,
+  });
+
+  await req.user.save();
+  return success(res, req.user.bankAccounts, 201);
+};
+
+exports.deleteBankAccount = async (req, res) => {
+  const before = req.user.bankAccounts.length;
+
+  req.user.bankAccounts = req.user.bankAccounts.filter(
+    (b) => String(b._id) !== String(req.params.bankAccountId)
+  );
+
+  if (before === req.user.bankAccounts.length)
+    return failure(res, 'Not found', 'NOT_FOUND', 404);
+
+  await req.user.save();
+  return success(res, req.user.bankAccounts);
+};
+
+/* ======================================================
+   KYC
+====================================================== */
+
+exports.getKycStatus = async (req, res) =>
+  success(res, {
+    currentStatus: req.user.kycStatus,
+    timeline: req.user.kyc?.timeline || [],
+  });
+
+exports.uploadKycDocuments = async (req, res) => {
+  const { type, fileUrl } = req.body;
+
+  if (!type || !fileUrl)
+    return failure(res, 'type & fileUrl required');
+
+  req.user.kyc.documents.push({
+    type,
+    fileUrl,
+    uploadedAt: new Date(),
+  });
+
+  req.user.kycStatus = 'PENDING';
+  await req.user.save();
+
+  return success(res, req.user.kyc);
+};
+
+exports.uploadKycSelfie = async (req, res) => {
+  if (!req.body.fileUrl)
+    return failure(res, 'fileUrl required');
+
+  req.user.kyc.selfieUrl = req.body.fileUrl;
+  await req.user.save();
+
+  return success(res, req.user.kyc);
+};
+
+/* ======================================================
+   ONBOARDING
+====================================================== */
+
+exports.getOnboardingChecklist = async (req, res) =>
+  success(res, req.user.onboardingChecklist || []);
+
+exports.completeOnboardingTask = async (req, res) => {
+  const task = req.user.onboardingChecklist.find(
+    (t) => t.taskId === req.params.taskId
+  );
+
+  if (!task)
+    return failure(res, 'Task not found', 'NOT_FOUND', 404);
+
+  task.completed = true;
+
+  req.user.onboardingStatus =
+    req.user.onboardingChecklist.every((t) => t.completed)
+      ? 'COMPLETED'
+      : 'INCOMPLETE';
+
+  await req.user.save();
+  return success(res, req.user.onboardingChecklist);
+};
+
+/* ======================================================
+   NOTIFICATIONS
+====================================================== */
+
+exports.getNotifications = async (req, res) =>
+  success(res, req.user.notifications || []);
+
+exports.getNotificationById = async (req, res) => {
+  const n = req.user.notifications.find(
+    (i) => String(i._id) === String(req.params.id)
+  );
+
+  if (!n)
+    return failure(res, 'Not found', 'NOT_FOUND', 404);
+
+  return success(res, n);
+};
+
+exports.markNotificationRead = async (req, res) => {
+  const n = req.user.notifications.find(
+    (i) => String(i._id) === String(req.params.id)
+  );
+
+  if (!n)
+    return failure(res, 'Not found', 'NOT_FOUND', 404);
+
+  n.read = true;
+  await req.user.save();
+
+  return success(res, n);
+};
+
+/* ======================================================
+   SUPPORT & TRAINING
+====================================================== */
+
+exports.createSupportIssue = async (req, res) => {
+  const { subject, description } = req.body;
+
+  if (!subject || !description)
+    return failure(res, 'subject & description required');
+
+  return success(
+    res,
+    {
+      id: `SUP-${Date.now()}`,
+      subject,
+      description,
+      status: 'OPEN',
+      createdAt: new Date(),
+    },
+    201
+  );
+};
+
+exports.getSafetyTraining = async (req, res) =>
+  success(res, [
+    {
+      id: 'safe-1',
+      title: 'Road Safety Essentials',
+      duration: '15 min',
+    },
+    {
+      id: 'safe-2',
+      title: 'Handling Fragile Deliveries',
+      duration: '8 min',
+    },
+  ]);
