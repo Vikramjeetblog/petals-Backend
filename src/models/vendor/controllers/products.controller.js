@@ -190,3 +190,36 @@ exports.updateProduct = async (req, res) => {
 };
 
 
+
+
+/* ======================================================
+   SET PRODUCT STOCK (BOOLEAN + QUANTITY)
+====================================================== */
+exports.setStock = async (req, res) => {
+  try {
+    const vendorId = req.user._id;
+    const { id } = req.params;
+    const { inStock, stockQuantity } = req.body;
+
+    const product = await Product.findOne({ _id: id, vendor: vendorId });
+    if (!product) {
+      return res.status(404).json({ success: false, message: 'Product not found' });
+    }
+
+    if (typeof inStock === 'boolean') product.inStock = inStock;
+    if (stockQuantity !== undefined) product.stockQuantity = Number(stockQuantity);
+
+    if (product.stockQuantity <= 0) product.inStock = false;
+
+    await product.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Stock updated',
+      data: { id: product._id, inStock: product.inStock, stockQuantity: product.stockQuantity },
+    });
+  } catch (error) {
+    console.error('SET STOCK ERROR:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update stock' });
+  }
+};
