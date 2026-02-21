@@ -1,7 +1,9 @@
+const mongoose = require('mongoose');
 const Cart = require('../cart/cart.model');
 const Order = require('./order.model');
-const Vendor = require('../vendor/vendor.model');
+const Product = require('../product/product.model');
 const crypto = require('crypto');
+const { VENDOR_ACCEPT_MINUTES } = require('../../config/sla.config');
 
 /* ================= ID GENERATOR ================= */
 const generatePrefixedId = (prefix) =>
@@ -32,13 +34,17 @@ const toLogisticsFlags = (product) => {
 };
 
 /* ======================================================
-   PLACE ORDER (SCALABLE SPLIT ARCHITECTURE)
+   PLACE ORDER (ENTERPRISE SPLIT + ATOMIC SAFE)
 ====================================================== */
 exports.placeOrder = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
     }
+
+    session.startTransaction();
 
     const cart = await Cart.findOne({
       user: req.user._id,
@@ -46,9 +52,11 @@ exports.placeOrder = async (req, res) => {
     })
       .populate('expressItems.product')
       .populate('marketplaceItems.product')
-      .populate('marketplaceItems.vendor');
+      .populate('marketplaceItems.vendor')
+      .session(session);
 
     if (!cart || (cart.expressItems.length === 0 && cart.marketplaceItems.length === 0)) {
+      await session.abortTransaction();
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
@@ -56,15 +64,39 @@ exports.placeOrder = async (req, res) => {
     const parentOrderId = generatePrefixedId('PO');
     const createdOrders = [];
 
+    /* ================= STOCK VALIDATION ================= */
+    const allItems = [...cart.expressItems, ...cart.marketplaceItems];
+
+    for (const item of allItems) {
+      if (!item.product || !item.product.isActive) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Product ${item.product?.name || ''} is unavailable`,
+        });
+      }
+
+      const stockUpdate = await Product.updateOne(
+        {
+          _id: item.product._id,
+          stockQuantity: { $gte: item.quantity },
+        },
+        { $inc: { stockQuantity: -item.quantity } },
+        { session }
+      );
+
+      if (stockUpdate.matchedCount === 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Insufficient stock for ${item.product.name}`,
+        });
+      }
+    }
+
     /* ================= EXPRESS ORDER ================= */
     if (cart.expressItems.length > 0) {
       let total = 0;
 
       const items = cart.expressItems.map((item) => {
-        if (!item.product || !item.product.isActive) {
-          throw new Error('One or more express products are unavailable');
-        }
-
         const lineTotal = item.price * item.quantity;
         total += lineTotal;
 
@@ -76,41 +108,42 @@ exports.placeOrder = async (req, res) => {
         };
       });
 
-      const expressOrder = await Order.create({
-        orderNumber: generatePrefixedId('ORD_EXP'),
-        paymentGroupId,
-        parentOrderId,
-        trackingId: generatePrefixedId('TRK_EXP'),
-        user: req.user._id,
-        type: 'EXPRESS',
-        fulfillmentSource: 'STORE',
-        vendor: null,
-        items,
-        totalAmount: total,
-        paymentStatus: 'PAID',
-        status: 'PLACED',
-      });
+      const expressOrder = await Order.create(
+        [
+          {
+            orderNumber: generatePrefixedId('ORD_EXP'),
+            paymentGroupId,
+            parentOrderId,
+            trackingId: generatePrefixedId('TRK_EXP'),
+            user: req.user._id,
+            type: 'EXPRESS',
+            fulfillmentSource: 'STORE',
+            vendor: null,
+            items,
+            totalAmount: total,
+            paymentStatus: 'PENDING',
+            status: 'PLACED',
+          },
+        ],
+        { session }
+      );
 
-      createdOrders.push(expressOrder);
+      createdOrders.push(expressOrder[0]);
     }
 
     /* ================= MARKETPLACE GROUPING ================= */
     const vendorBuckets = {};
 
     for (const item of cart.marketplaceItems) {
-      if (!item.product || !item.product.isActive) {
-        return res.status(400).json({
-          message: 'One or more marketplace products are unavailable',
-        });
-      }
-
       if (!item.vendor) {
+        await session.abortTransaction();
         return res.status(400).json({
           message: 'Marketplace item missing vendor',
         });
       }
 
       if (!item.vendor.isActive || !item.vendor.isOnline) {
+        await session.abortTransaction();
         return res.status(400).json({
           message: `Vendor ${item.vendor.storeName} is currently unavailable`,
         });
@@ -142,29 +175,47 @@ exports.placeOrder = async (req, res) => {
     for (const vendorId in vendorBuckets) {
       const bucket = vendorBuckets[vendorId];
 
-      const vendorOrder = await Order.create({
-        orderNumber: generatePrefixedId('ORD_MKT'),
-        paymentGroupId,
-        parentOrderId,
-        trackingId: generatePrefixedId('TRK_MKT'),
-        user: req.user._id,
-        vendor: bucket.vendor._id,
-        type: 'MARKETPLACE',
-        fulfillmentSource: 'VENDOR',
-        items: bucket.items,
-        totalAmount: bucket.total,
-        paymentStatus: 'COD',
-        status: 'PENDING_VENDOR_ACCEPTANCE',
-      });
+      const acceptBy = new Date(
+        Date.now() + VENDOR_ACCEPT_MINUTES * 60 * 1000
+      );
 
-      createdOrders.push(vendorOrder);
+      const vendorOrder = await Order.create(
+        [
+          {
+            orderNumber: generatePrefixedId('ORD_MKT'),
+            paymentGroupId,
+            parentOrderId,
+            trackingId: generatePrefixedId('TRK_MKT'),
+            user: req.user._id,
+            vendor: bucket.vendor._id,
+            type: 'MARKETPLACE',
+            fulfillmentSource: 'VENDOR',
+            items: bucket.items,
+            totalAmount: bucket.total,
+            paymentStatus: 'PENDING',
+            status: 'PENDING_VENDOR_ACCEPTANCE',
+            sla: { acceptBy },
+          },
+        ],
+        { session }
+      );
+
+      if (bucket.vendor.autoAcceptOrders) {
+        vendorOrder[0].status = 'ACCEPTED';
+        vendorOrder[0].acceptedAt = new Date();
+        await vendorOrder[0].save({ session });
+      }
+
+      createdOrders.push(vendorOrder[0]);
     }
 
     /* ================= CLEAR CART ================= */
     cart.expressItems = [];
     cart.marketplaceItems = [];
     cart.isActive = false;
-    await cart.save();
+    await cart.save({ session });
+
+    await session.commitTransaction();
 
     return res.status(201).json({
       message: 'Order(s) placed successfully',
@@ -175,19 +226,19 @@ exports.placeOrder = async (req, res) => {
     });
 
   } catch (error) {
-    if (error.message?.includes('unavailable')) {
-      return res.status(400).json({ message: error.message });
-    }
-
+    await session.abortTransaction();
     console.error('PLACE ORDER ERROR:', error);
+
     return res.status(500).json({
       message: 'Something went wrong',
     });
+  } finally {
+    session.endSession();
   }
 };
 
 /* ======================================================
-   GET USER ORDERS
+   GET USER ORDERS (OPTIMIZED FOR SCALE)
 ====================================================== */
 exports.getMyOrders = async (req, res) => {
   try {
@@ -197,6 +248,9 @@ exports.getMyOrders = async (req, res) => {
 
     const orders = await Order.find({ user: req.user._id })
       .sort({ createdAt: -1 })
+      .select(
+        'orderNumber trackingId parentOrderId paymentGroupId fulfillmentSource type status paymentStatus totalAmount createdAt items'
+      )
       .populate('items.product', 'name image category');
 
     return res.status(200).json({
