@@ -1,41 +1,12 @@
 const mongoose = require('mongoose');
 
-/* ================= LOGISTICS FLAGS ================= */
-const LogisticsFlagsSchema = new mongoose.Schema(
-  {
-    perishable: {
-      type: Boolean,
-      default: false,
-    },
-    fragile: {
-      type: Boolean,
-      default: false,
-    },
-    liveAnimal: {
-      type: Boolean,
-      default: false,
-    },
-    handleWithCare: {
-      type: Boolean,
-      default: false,
-    },
-    logisticsFlag: {
-      type: String,
-      enum: ['FRAGILE', 'LIVE_ANIMAL', null],
-      default: null,
-    },
-  },
-  { _id: false }
-);
-
-/* ================= ORDER ITEM ================= */
+/*  ORDER ITEM */
 const OrderItemSchema = new mongoose.Schema(
   {
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Product',
       required: true,
-      index: true,
     },
 
     quantity: {
@@ -50,36 +21,39 @@ const OrderItemSchema = new mongoose.Schema(
     },
 
     logisticsFlags: {
-      type: LogisticsFlagsSchema,
-      default: () => ({}),
+      perishable: {
+        type: Boolean,
+        default: false,
+      },
+      fragile: {
+        type: Boolean,
+        default: false,
+      },
+      liveAnimal: {
+        type: Boolean,
+        default: false,
+      },
+      handleWithCare: {
+        type: Boolean,
+        default: false,
+      },
+      logisticsFlag: {
+        type: String,
+        enum: ['FRAGILE', 'LIVE_ANIMAL', null],
+        default: null,
+      },
     },
+
   },
   { _id: false }
 );
 
-/* ================= SLA ================= */
-const SLASchema = new mongoose.Schema(
-  {
-    acceptBy: {
-      type: Date,
-      index: true,
-    },
-    acceptedLate: {
-      type: Boolean,
-      default: false,
-    },
-  },
-  { _id: false }
-);
-
-/* ================= ORDER ================= */
+/*  ORDER  */
 const OrderSchema = new mongoose.Schema(
   {
-    /* ---------- IDENTIFIERS ---------- */
-
+    /*  IDENTIFIERS  */
     orderNumber: {
       type: String,
-      required: true,
       unique: true,
       index: true,
     },
@@ -103,13 +77,24 @@ const OrderSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ---------- ACTORS ---------- */
+   
+sla: {
+  acceptBy: {
+    type: Date, // Vendor must accept before this time
+    index: true,
+  },
+  acceptedLate: {
+    type: Boolean,
+    default: false,
+  },
+},
 
+
+    /* ACTORS  */
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-      index: true,
     },
 
     vendor: {
@@ -119,8 +104,7 @@ const OrderSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* ---------- ORDER TYPE ---------- */
-
+    /*  ORDER TYPE  */
     type: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
@@ -135,20 +119,19 @@ const OrderSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ---------- ITEMS ---------- */
-
+    /*  ITEMS  */
     items: {
       type: [OrderItemSchema],
       required: true,
     },
 
-    /* ---------- FINANCIALS ---------- */
-
+    /* AMOUNTS  */
     totalAmount: {
       type: Number,
       required: true,
     },
 
+    /* PAYMENT  */
     paymentStatus: {
       type: String,
       enum: ['PAID', 'COD', 'PENDING'],
@@ -156,8 +139,24 @@ const OrderSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ---------- STATUS ---------- */
+    razorpayOrderId: {
+      type: String,
+      index: true,
+      default: null,
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+    razorpaySignature: {
+      type: String,
+      default: null,
+    },
+    processedWebhookEvents: [{
+      type: String,
+    }],
 
+    /* ORDER STATUS  */
     status: {
       type: String,
       enum: [
@@ -175,15 +174,7 @@ const OrderSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ---------- SLA ---------- */
-
-    sla: {
-      type: SLASchema,
-      default: () => ({}),
-    },
-
-    /* ---------- VENDOR TIMELINE ---------- */
-
+    /*  VENDOR TIMESTAMPS  */
     acceptedAt: Date,
     prepTimeMinutes: Number,
     estimatedReadyAt: Date,
@@ -195,42 +186,18 @@ const OrderSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-
-    /* ---------- FUTURE READY FLAGS ---------- */
-
-    subscriptionId: {
-      type: String,
-      default: null,
-      index: true,
-    },
-
-    riderAssigned: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Rider',
-      default: null,
-      index: true,
-    },
   },
   {
     timestamps: true,
   }
 );
 
-/* ================= PERFORMANCE INDEXES ================= */
-
-// Vendor dashboard
-OrderSchema.index({ vendor: 1, status: 1, createdAt: -1 });
-
-// User order history
+/*  INDEXES  */
+OrderSchema.index({ vendor: 1, status: 1 });
 OrderSchema.index({ user: 1, createdAt: -1 });
-
-// Parent order grouping
-OrderSchema.index({ parentOrderId: 1 });
-
-// Payment grouping
 OrderSchema.index({ paymentGroupId: 1 });
+OrderSchema.index({ trackingId: 1 });
+OrderSchema.index({ status: 1, createdAt: -1 });
 
-// SLA expiration scanning
-OrderSchema.index({ 'sla.acceptBy': 1, status: 1 });
 
 module.exports = mongoose.model('Order', OrderSchema);
