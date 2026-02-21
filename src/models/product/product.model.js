@@ -1,26 +1,13 @@
 const mongoose = require('mongoose');
 
-/* ================= LOGISTICS FLAGS ================= */
 
-const LogisticsSchema = new mongoose.Schema(
-  {
-    perishable: { type: Boolean, default: false },
-    fragile: { type: Boolean, default: false },
-    liveAnimal: { type: Boolean, default: false },
-    handleWithCare: { type: Boolean, default: false },
-  },
-  { _id: false }
-);
-
-/* ================= PRODUCT ================= */
 
 const ProductSchema = new mongoose.Schema(
   {
-    /* ---------- BASIC INFO ---------- */
-
+    /* ================= BASIC INFO ================= */
     name: {
       type: String,
-      required: true,
+      required: [true, 'Product name is required'],
       trim: true,
       index: true,
     },
@@ -39,15 +26,15 @@ const ProductSchema = new mongoose.Schema(
 
     price: {
       type: Number,
-      required: true,
-      min: 0,
+      required: [true, 'Product price is required'],
+      min: [0, 'Price must be a positive number'],
     },
 
     category: {
       type: String,
-      required: true,
-      trim: true,
+      required: [true, 'Category is required'],
       index: true,
+      trim: true,
     },
 
     image: {
@@ -55,8 +42,7 @@ const ProductSchema = new mongoose.Schema(
       default: null,
     },
 
-    /* ---------- FULFILLMENT ---------- */
-
+    /* ================= FULFILLMENT ================= */
     fulfillmentModel: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
@@ -65,34 +51,33 @@ const ProductSchema = new mongoose.Schema(
     },
 
     deliveryPromise: {
-      minMinutes: Number,
-      maxMinutes: Number,
+      minMinutes: { type: Number },
+      maxMinutes: { type: Number },
     },
 
-    /* ---------- LOGISTICS ---------- */
-
+    /* ================= FLAGS ================= */
     flags: {
-      type: LogisticsSchema,
-      default: () => ({}),
+      perishable: { type: Boolean, default: false },
+      fragile: { type: Boolean, default: false },
+      liveAnimal: { type: Boolean, default: false },
+      handleWithCare: { type: Boolean, default: false },
     },
 
     logisticsFlag: {
       type: String,
-      enum: ['FRAGILE', 'LIVE_ANIMAL'],
+      enum: ['FRAGILE', 'LIVE_ANIMAL', null],
       default: null,
       index: true,
     },
 
-    /* ---------- KIT BUILDER ---------- */
-
+    /* ================= KIT BUILDER ================= */
     isKit: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     kitData: {
-      occasion: String,
+      occasion: { type: String, trim: true },
       items: [
         {
           productId: {
@@ -108,8 +93,7 @@ const ProductSchema = new mongoose.Schema(
       ],
     },
 
-    /* ---------- MARKETPLACE ---------- */
-
+    /* ================= MARKETPLACE ================= */
     vendor: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Vendor',
@@ -117,12 +101,29 @@ const ProductSchema = new mongoose.Schema(
       index: true,
     },
 
-    /* ---------- STATUS ---------- */
-
+    /* ================= STATUS ================= */
     inStock: {
       type: Boolean,
       default: true,
       index: true,
+    },
+
+    stockQuantity: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    tags: [{
+      type: String,
+      trim: true,
+      uppercase: true,
+    }],
+
+    rackLocation: {
+      type: String,
+      default: null,
+      trim: true,
     },
 
     isActive: {
@@ -134,32 +135,39 @@ const ProductSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-/* ================= INDEXES ================= */
+/* ======================================================
+   INDEXES
+====================================================== */
 
 ProductSchema.index({ name: 'text', category: 'text' });
 ProductSchema.index({ vendor: 1, isActive: 1 });
 ProductSchema.index({ fulfillmentModel: 1, inStock: 1 });
-ProductSchema.index({ logisticsFlag: 1 });
 
-/* ================= HELPERS ================= */
+/* ======================================================
+   HELPERS
+====================================================== */
 
 function slugify(text) {
   return text
+    .toString()
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }
 
-/* ================= PRE-SAVE ================= */
+/* ======================================================
+   PRE-SAVE HOOK
+   (MONGOOSE 8+ SAFE — PROMISE STYLE)
+====================================================== */
 
 ProductSchema.pre('save', async function () {
-  /* SLUG */
+  /* ========== SLUG ========== */
   if (this.isModified('name') || !this.slug) {
     this.slug = slugify(this.name);
   }
 
-  /* SYNC LOGISTICS */
+
   if (this.logisticsFlag === 'FRAGILE') {
     this.flags.fragile = true;
     this.flags.handleWithCare = true;
@@ -170,16 +178,28 @@ ProductSchema.pre('save', async function () {
     this.flags.handleWithCare = true;
   }
 
-  /* EXPRESS RULES */
+
+  if (this.category?.toLowerCase() === 'snacks') {
+    const tags = (this.tags || []).map((tag) => String(tag).toUpperCase());
+    if (!tags.includes('GRAIN_FREE')) {
+      throw new Error('Snacks category must include GRAIN_FREE tag');
+    }
+  }
+
+  /* ========== EXPRESS RULES ========== */
   if (this.fulfillmentModel === 'EXPRESS') {
     this.deliveryPromise = { minMinutes: 12, maxMinutes: 20 };
 
-    if (this.flags.liveAnimal) {
+    if (this.flags?.liveAnimal) {
       throw new Error('Live animals cannot be EXPRESS products');
     }
   }
 
-  /* MARKETPLACE RULES */
+  if (this.stockQuantity <= 0) {
+    this.inStock = false;
+  }
+
+  /* ========== MARKETPLACE RULES ========== */
   if (this.fulfillmentModel === 'MARKETPLACE') {
     if (!this.vendor) {
       throw new Error('Marketplace product must have a vendor');
@@ -193,9 +213,13 @@ ProductSchema.pre('save', async function () {
     }
   }
 
-  /* KIT RULES */
+  /* ========== KIT RULES ========== */
   if (this.isKit) {
-    if (!this.kitData?.items?.length) {
+    if (
+      !this.kitData ||
+      !Array.isArray(this.kitData.items) ||
+      this.kitData.items.length === 0
+    ) {
       throw new Error('Kit must contain at least one item');
     }
 
