@@ -1,14 +1,35 @@
-
+const mongoose = require('mongoose');
 const Rider = require('./rider.model');
 const RiderOrder = require('./riderOrder.model');
 const Otp = require('../auth/otp.service');
 const jwt = require('jsonwebtoken');
+
+/* ======================================================
+   RESPONSE HELPERS
+====================================================== */
 
 const success = (res, data, status = 200) =>
   res.status(status).json({ success: true, data });
 
 const failure = (res, message, code = 'BAD_REQUEST', status = 400) =>
   res.status(status).json({ success: false, message, code });
+
+const isValidObjectId = (id) =>
+  mongoose.Types.ObjectId.isValid(id);
+
+/* ======================================================
+   STRICT RIDER STATE MACHINE
+====================================================== */
+
+const allowedTransitions = {
+  assigned: ['picked'],
+  picked: ['enroute'],
+  enroute: ['arrived'],
+  arrived: ['delivered'],
+};
+
+const canTransition = (current, next) =>
+  allowedTransitions[current]?.includes(next);
 
 /* ======================================================
    OTP AUTH
@@ -17,9 +38,10 @@ const failure = (res, message, code = 'BAD_REQUEST', status = 400) =>
 exports.requestOtp = async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone) return failure(res, 'Phone is required', 'PHONE_REQUIRED');
+    if (!phone)
+      return failure(res, 'Phone is required', 'PHONE_REQUIRED');
 
-    await Otp.saveOtp(phone, '1234', 'RIDER'); // Replace with real OTP service
+    await Otp.saveOtp(phone, '1234', 'RIDER'); // Replace in production
     return success(res, { message: 'OTP sent successfully' });
   } catch (error) {
     console.error('REQUEST OTP ERROR:', error);
@@ -30,11 +52,13 @@ exports.requestOtp = async (req, res) => {
 exports.verifyOtp = async (req, res) => {
   try {
     const { phone, otp } = req.body;
+
     if (!phone || !otp)
       return failure(res, 'Phone & OTP required', 'INVALID_PAYLOAD');
 
     const isValid = await Otp.verifyOtp(phone, otp, 'RIDER');
-    if (!isValid) return failure(res, 'Invalid OTP', 'INVALID_OTP');
+    if (!isValid)
+      return failure(res, 'Invalid OTP', 'INVALID_OTP');
 
     let rider = await Rider.findOne({ phone });
     if (!rider) rider = await Rider.create({ phone });
@@ -56,18 +80,16 @@ exports.verifyOtp = async (req, res) => {
    PROFILE
 ====================================================== */
 
-exports.getProfile = async (req, res) => {
-  return success(res, req.user);
-};
+exports.getProfile = async (req, res) =>
+  success(res, req.user);
 
 exports.updateProfile = async (req, res) => {
   try {
     const allowed = ['name', 'email', 'vehicleType', 'vehicleNumber'];
 
     allowed.forEach((field) => {
-      if (req.body[field] !== undefined) {
+      if (req.body[field] !== undefined)
         req.user[field] = req.body[field];
-      }
     });
 
     await req.user.save();
@@ -121,7 +143,7 @@ exports.updateAvailability = async (req, res) => {
 };
 
 /* ======================================================
-   RIDER ORDERS
+   RIDER ORDERS (SAFE PAGINATION)
 ====================================================== */
 
 exports.getOrders = async (req, res) => {
@@ -129,42 +151,59 @@ exports.getOrders = async (req, res) => {
     const filter = { rider: req.user._id };
     if (req.query.status) filter.status = req.query.status;
 
-    const orders = await RiderOrder.find(filter)
-      .sort({ createdAt: -1 });
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const skip = (page - 1) * limit;
 
-    return success(res, orders);
+    const [rows, total] = await Promise.all([
+      RiderOrder.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      RiderOrder.countDocuments(filter),
+    ]);
+
+    return success(res, {
+      meta: { total, page, pages: Math.ceil(total / limit) },
+      rows,
+    });
   } catch (error) {
     console.error('GET ORDERS ERROR:', error);
     return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
   }
 };
 
+/* ======================================================
+   UPDATE ORDER STATUS (STRICT TRANSITION)
+====================================================== */
+
 exports.updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
+    const { orderId } = req.params;
 
-    const allowedStatuses = [
-      'assigned',
-      'picked',
-      'enroute',
-      'arrived',
-      'delivered',
-    ];
-
-    if (!allowedStatuses.includes(status))
-      return failure(res, 'Invalid status', 'INVALID_STATUS');
+    if (!isValidObjectId(orderId))
+      return failure(res, 'Invalid order ID');
 
     const order = await RiderOrder.findOne({
-      _id: req.params.orderId,
+      _id: orderId,
       rider: req.user._id,
     });
 
     if (!order)
       return failure(res, 'Order not found', 'ORDER_NOT_FOUND', 404);
 
-    order.status = status;
-    await order.save();
+    if (!canTransition(order.status, status))
+      return failure(
+        res,
+        `Invalid transition from ${order.status} to ${status}`,
+        'INVALID_TRANSITION'
+      );
 
+    order.status = status;
+    order[`${status}At`] = new Date();
+
+    await order.save();
     return success(res, order);
   } catch (error) {
     console.error('UPDATE ORDER STATUS ERROR:', error);
@@ -173,27 +212,35 @@ exports.updateOrderStatus = async (req, res) => {
 };
 
 /* ======================================================
-   OTP VERIFICATION WITH SAFETY CHECK
+   VERIFY PICKUP OTP
 ====================================================== */
 
 exports.verifyPickupOtp = async (req, res) => {
   try {
     const { otp } = req.body;
+    const { orderId } = req.params;
+
+    if (!isValidObjectId(orderId))
+      return failure(res, 'Invalid order ID');
 
     const order = await RiderOrder.findOne({
-      _id: req.params.orderId,
+      _id: orderId,
       rider: req.user._id,
     });
 
     if (!order)
       return failure(res, 'Order not found', 'ORDER_NOT_FOUND', 404);
 
+    if (order.status !== 'assigned')
+      return failure(res, 'Order must be assigned first', 'INVALID_STATE');
+
     if (String(order.pickupOtp) !== String(otp))
       return failure(res, 'Invalid OTP', 'INVALID_OTP');
 
     order.status = 'picked';
-    await order.save();
+    order.pickedAt = new Date();
 
+    await order.save();
     return success(res, order);
   } catch (error) {
     console.error('PICKUP OTP ERROR:', error);
@@ -201,38 +248,46 @@ exports.verifyPickupOtp = async (req, res) => {
   }
 };
 
+/* ======================================================
+   VERIFY DELIVERY OTP
+====================================================== */
+
 exports.verifyDeliveryOtp = async (req, res) => {
   try {
     const { otp } = req.body;
+    const { orderId } = req.params;
+
+    if (!isValidObjectId(orderId))
+      return failure(res, 'Invalid order ID');
 
     const order = await RiderOrder.findOne({
-      _id: req.params.orderId,
+      _id: orderId,
       rider: req.user._id,
     });
 
     if (!order)
       return failure(res, 'Order not found', 'ORDER_NOT_FOUND', 404);
 
+    if (order.status !== 'arrived')
+      return failure(res, 'Order must be arrived first', 'INVALID_STATE');
+
     if (String(order.deliveryOtp) !== String(otp))
       return failure(res, 'Invalid OTP', 'INVALID_OTP');
 
-    /* ===== Mandatory Photo Proof for Risk Orders ===== */
     const requiresProof =
       order.alert === 'LIVE' || order.alert === 'FRAGILE';
 
-    if (requiresProof && !order.deliveryProof?.photoUrl) {
+    if (requiresProof && !order.deliveryProof?.photoUrl)
       return failure(
         res,
         'Photo proof required for fragile/live delivery',
-        'PROOF_REQUIRED'
+        'DELIVERY_PROOF_REQUIRED'
       );
-    }
 
     order.status = 'delivered';
     order.deliveredAt = new Date();
 
     await order.save();
-
     return success(res, order);
   } catch (error) {
     console.error('DELIVERY OTP ERROR:', error);
@@ -246,8 +301,17 @@ exports.verifyDeliveryOtp = async (req, res) => {
 
 exports.addDeliveryProof = async (req, res) => {
   try {
+    const { photoUrl, notes } = req.body;
+    const { orderId } = req.params;
+
+    if (!photoUrl)
+      return failure(res, 'photoUrl required');
+
+    if (!isValidObjectId(orderId))
+      return failure(res, 'Invalid order ID');
+
     const order = await RiderOrder.findOne({
-      _id: req.params.orderId,
+      _id: orderId,
       rider: req.user._id,
     });
 
@@ -255,8 +319,8 @@ exports.addDeliveryProof = async (req, res) => {
       return failure(res, 'Order not found', 'ORDER_NOT_FOUND', 404);
 
     order.deliveryProof = {
-      photoUrl: req.body.photoUrl,
-      notes: req.body.notes,
+      photoUrl,
+      notes: notes || null,
       uploadedAt: new Date(),
     };
 
@@ -271,25 +335,26 @@ exports.addDeliveryProof = async (req, res) => {
    AUTH SESSION
 ====================================================== */
 
-exports.me = async (req, res) => {
-  return success(res, req.user);
-};
+exports.me = async (req, res) =>
+  success(res, req.user);
 
-exports.logout = async (req, res) => {
-  // Stateless JWT logout (client deletes token)
-  return success(res, { message: 'Logged out successfully' });
-};
+exports.logout = async (req, res) =>
+  success(res, { message: 'Logged out successfully' });
 
 /* ======================================================
    SENSITIVE INFO
 ====================================================== */
 
 exports.getSensitiveInfo = async (req, res) => {
-  const rider = await Rider.findById(req.user._id).select('+sensitiveInfo');
-  if (!rider)
-    return failure(res, 'Rider not found', 'NOT_FOUND', 404);
+  try {
+    const rider = await Rider.findById(req.user._id).select('+sensitiveInfo');
+    if (!rider)
+      return failure(res, 'Rider not found', 'NOT_FOUND', 404);
 
-  return success(res, rider.getMaskedSensitiveInfo());
+    return success(res, rider.getMaskedSensitiveInfo());
+  } catch (err) {
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+  }
 };
 
 exports.updateSensitiveInfo = async (req, res) => {
@@ -307,8 +372,7 @@ exports.updateSensitiveInfo = async (req, res) => {
 
     await req.user.save();
     return success(res, req.user.getMaskedSensitiveInfo());
-  } catch (error) {
-    console.error('SENSITIVE UPDATE ERROR:', error);
+  } catch (err) {
     return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
   }
 };
@@ -319,6 +383,9 @@ exports.updateSensitiveInfo = async (req, res) => {
 
 exports.getOrderById = async (req, res) => {
   try {
+    if (!isValidObjectId(req.params.orderId))
+      return failure(res, 'Invalid order ID');
+
     const order = await RiderOrder.findOne({
       _id: req.params.orderId,
       rider: req.user._id,
@@ -328,13 +395,13 @@ exports.getOrderById = async (req, res) => {
       return failure(res, 'Order not found', 'NOT_FOUND', 404);
 
     return success(res, order);
-  } catch (error) {
+  } catch (err) {
     return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
   }
 };
 
 /* ======================================================
-   EARNINGS
+   EARNINGS SUMMARY
 ====================================================== */
 
 exports.getEarningsSummary = async (req, res) => {
@@ -371,6 +438,10 @@ exports.getEarningsSummary = async (req, res) => {
   }
 };
 
+/* ======================================================
+   EARNINGS ACTIVITY (PAGINATED)
+====================================================== */
+
 exports.getEarningsActivity = async (req, res) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
@@ -391,7 +462,7 @@ exports.getEarningsActivity = async (req, res) => {
       RiderOrder.countDocuments(filter),
     ]);
 
-    return success(res, {
+    return success(resുവനന്തപുരം, {
       meta: { total, page, pages: Math.ceil(total / limit) },
       rows,
     });
@@ -417,9 +488,10 @@ exports.getPayouts = async (req, res) =>
 
 exports.withdrawPayout = async (req, res) => {
   try {
-    const { amount, bankAccountId } = req.body;
+    const amount = Number(req.body.amount);
+    const { bankAccountId } = req.body;
 
-    if (!amount || Number(amount) <= 0)
+    if (!amount || amount <= 0)
       return failure(res, 'Invalid amount');
 
     if ((req.user.wallet?.available || 0) < amount)
@@ -432,9 +504,10 @@ exports.withdrawPayout = async (req, res) => {
     if (!bank)
       return failure(res, 'Bank account not found', 'NOT_FOUND', 404);
 
-    req.user.wallet.available -= Number(amount);
+    req.user.wallet.available -= amount;
+
     req.user.payouts.push({
-      amount: Number(amount),
+      amount,
       status: 'PENDING',
       date: new Date(),
       bankAccountId,
