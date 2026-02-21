@@ -1,5 +1,7 @@
+const mongoose = require('mongoose');
 const Cart = require('../cart/cart.model');
 const Order = require('../order/order.model');
+const Product = require('../product/product.model');
 const crypto = require('crypto');
 const { VENDOR_ACCEPT_MINUTES } = require('../../config/sla.config');
 
@@ -32,25 +34,32 @@ const toLogisticsFlags = (product) => {
 };
 
 /* ======================================================
-   HYBRID CHECKOUT (EXPRESS + MARKETPLACE)
+   ENTERPRISE HYBRID CHECKOUT (ATOMIC + SCALABLE)
 ====================================================== */
 exports.checkout = async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
+    session.startTransaction();
+
     const user = req.user;
 
+    /* ================= LOAD CART ================= */
     const cart = await Cart.findOne({
       user: user._id,
       isActive: true,
     })
       .populate('expressItems.product')
       .populate('marketplaceItems.product')
-      .populate('marketplaceItems.vendor');
+      .populate('marketplaceItems.vendor')
+      .session(session);
 
     if (!cart || (cart.expressItems.length === 0 && cart.marketplaceItems.length === 0)) {
+      await session.abortTransaction();
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
@@ -59,16 +68,44 @@ exports.checkout = async (req, res) => {
     const createdOrders = [];
 
     /* ======================================================
+       STOCK VALIDATION + ATOMIC DEDUCTION
+    ====================================================== */
+    const allCartItems = [...cart.expressItems, ...cart.marketplaceItems];
+
+    for (const item of allCartItems) {
+      if (!item.product || !item.product.isActive) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Product ${item.product?.name || ''} is unavailable`,
+        });
+      }
+
+      const stockUpdate = await Product.updateOne(
+        {
+          _id: item.product._id,
+          stockQuantity: { $gte: item.quantity },
+        },
+        {
+          $inc: { stockQuantity: -item.quantity },
+        },
+        { session }
+      );
+
+      if (stockUpdate.matchedCount === 0) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          message: `Insufficient stock for ${item.product.name}`,
+        });
+      }
+    }
+
+    /* ======================================================
        EXPRESS ORDER
     ====================================================== */
     if (cart.expressItems.length > 0) {
       let total = 0;
 
       const items = cart.expressItems.map((item) => {
-        if (!item.product || !item.product.isActive) {
-          throw new Error('One or more express products are unavailable');
-        }
-
         const lineTotal = item.price * item.quantity;
         total += lineTotal;
 
@@ -80,22 +117,27 @@ exports.checkout = async (req, res) => {
         };
       });
 
-      const expressOrder = await Order.create({
-        orderNumber: generatePrefixedId('ORD_EXP'),
-        paymentGroupId,
-        parentOrderId,
-        trackingId: generatePrefixedId('TRK_EXP'),
-        user: user._id,
-        type: 'EXPRESS',
-        fulfillmentSource: 'STORE',
-        vendor: null,
-        items,
-        totalAmount: total,
-        paymentStatus: 'PAID',
-        status: 'PLACED',
-      });
+      const expressOrder = await Order.create(
+        [
+          {
+            orderNumber: generatePrefixedId('ORD_EXP'),
+            paymentGroupId,
+            parentOrderId,
+            trackingId: generatePrefixedId('TRK_EXP'),
+            user: user._id,
+            type: 'EXPRESS',
+            fulfillmentSource: 'STORE',
+            vendor: null,
+            items,
+            totalAmount: total,
+            paymentStatus: 'PENDING',
+            status: 'PLACED',
+          },
+        ],
+        { session }
+      );
 
-      createdOrders.push(expressOrder);
+      createdOrders.push(expressOrder[0]);
     }
 
     /* ======================================================
@@ -104,19 +146,15 @@ exports.checkout = async (req, res) => {
     const vendorBuckets = {};
 
     for (const item of cart.marketplaceItems) {
-      if (!item.product || !item.product.isActive) {
-        return res.status(400).json({
-          message: 'One or more marketplace products are unavailable',
-        });
-      }
-
       if (!item.vendor) {
+        await session.abortTransaction();
         return res.status(400).json({
           message: 'Marketplace item missing vendor',
         });
       }
 
       if (!item.vendor.isActive || !item.vendor.isOnline) {
+        await session.abortTransaction();
         return res.status(400).json({
           message: `Vendor ${item.vendor.storeName} is currently unavailable`,
         });
@@ -145,7 +183,7 @@ exports.checkout = async (req, res) => {
     }
 
     /* ======================================================
-       CREATE VENDOR ORDERS (WITH SLA + AUTO ACCEPT)
+       CREATE VENDOR ORDERS (SLA + AUTO ACCEPT)
     ====================================================== */
     for (const vendorId in vendorBuckets) {
       const bucket = vendorBuckets[vendorId];
@@ -154,30 +192,34 @@ exports.checkout = async (req, res) => {
         Date.now() + VENDOR_ACCEPT_MINUTES * 60 * 1000
       );
 
-      const vendorOrder = await Order.create({
-        orderNumber: generatePrefixedId('ORD_MKT'),
-        paymentGroupId,
-        parentOrderId,
-        trackingId: generatePrefixedId('TRK_MKT'),
-        user: user._id,
-        vendor: bucket.vendor._id,
-        type: 'MARKETPLACE',
-        fulfillmentSource: 'VENDOR',
-        items: bucket.items,
-        totalAmount: bucket.total,
-        paymentStatus: 'COD',
-        status: 'PENDING_VENDOR_ACCEPTANCE',
-        sla: { acceptBy },
-      });
+      const vendorOrder = await Order.create(
+        [
+          {
+            orderNumber: generatePrefixedId('ORD_MKT'),
+            paymentGroupId,
+            parentOrderId,
+            trackingId: generatePrefixedId('TRK_MKT'),
+            user: user._id,
+            vendor: bucket.vendor._id,
+            type: 'MARKETPLACE',
+            fulfillmentSource: 'VENDOR',
+            items: bucket.items,
+            totalAmount: bucket.total,
+            paymentStatus: 'PENDING',
+            status: 'PENDING_VENDOR_ACCEPTANCE',
+            sla: { acceptBy },
+          },
+        ],
+        { session }
+      );
 
-      /* AUTO ACCEPT SUPPORT */
       if (bucket.vendor.autoAcceptOrders) {
-        vendorOrder.status = 'ACCEPTED';
-        vendorOrder.acceptedAt = new Date();
-        await vendorOrder.save();
+        vendorOrder[0].status = 'ACCEPTED';
+        vendorOrder[0].acceptedAt = new Date();
+        await vendorOrder[0].save({ session });
       }
 
-      createdOrders.push(vendorOrder);
+      createdOrders.push(vendorOrder[0]);
     }
 
     /* ======================================================
@@ -186,11 +228,10 @@ exports.checkout = async (req, res) => {
     cart.expressItems = [];
     cart.marketplaceItems = [];
     cart.isActive = false;
-    await cart.save();
+    await cart.save({ session });
 
-    /* ======================================================
-       FINAL RESPONSE
-    ====================================================== */
+    await session.commitTransaction();
+
     return res.status(200).json({
       message: 'Checkout successful',
       paymentGroupId,
@@ -200,14 +241,13 @@ exports.checkout = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('HYBRID CHECKOUT ERROR:', error);
-
-    if (error.message?.includes('unavailable')) {
-      return res.status(400).json({ message: error.message });
-    }
+    await session.abortTransaction();
+    console.error('CHECKOUT ERROR:', error);
 
     return res.status(500).json({
       message: 'Something went wrong during checkout',
     });
+  } finally {
+    session.endSession();
   }
 };
