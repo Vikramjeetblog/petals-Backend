@@ -1,4 +1,6 @@
- const SensitiveInfoSchema = new mongoose.Schema({
+const mongoose = require('mongoose');
+
+const SensitiveInfoSchema = new mongoose.Schema({
    bankAccountNumber:{
        type: String,
        select: false,
