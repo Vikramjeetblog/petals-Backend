@@ -25,6 +25,8 @@ const RiderOrderSchema = new mongoose.Schema(
       lng: Number,
     },
     eta: String,
+     estimatedDistance: { type: Number, default: null },
+    estimatedDuration: { type: Number, default: null },
     alert: {
       type: String,
       enum: ['LIVE', 'FRAGILE', null],
