@@ -437,21 +437,31 @@ exports.completeOnboardingTask = async (req, res) => {
   try {
     ensureChecklistDefaults(req.user);
 
-    const task = req.user.onboardingChecklist.find((item) => item.taskId === req.params.taskId);
-    if (!task) return failure(res, 'Task not found', 'TASK_NOT_FOUND', 404);
+    const task = req.user.onboardingChecklist.find(
+      (item) => item.taskId === req.params.taskId
+    );
+
+    if (!task) {
+      return failure(res, 'Task not found', 'TASK_NOT_FOUND', 404);
+    }
 
     task.completed = true;
-   req.user.onboardingStatus = req.user.onboardingChecklist.every((item) => item.completed)
-     ? 'COMPLETED'
-     : 'INCOMPLETE';
 
-   await req.user.save();
-   return success(res, req.user.onboardingChecklist);+  } catch (error) {
+    req.user.onboardingStatus = req.user.onboardingChecklist.every(
+      (item) => item.completed
+    )
+      ? 'COMPLETED'
+      : 'INCOMPLETE';
+
+    await req.user.save();
+
+    return success(res, req.user.onboardingChecklist);
+
+  } catch (error) {
     console.error('RIDER COMPLETE CHECKLIST TASK ERROR:', error);
-   return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
+    return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
   }
 };
-
 exports.getNotifications = async (req, res) => {
   const rows = (req.user.notifications || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   return success(res, rows);
