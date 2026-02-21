@@ -39,7 +39,7 @@
   getNotificationById,
  createSupportIssue,
   getSafetyTraining,
- } = require('./rider.contorller');
+ } = require('./rider.controller');
  
 router.post('/auth/request-otp', requestOtp);
 router.post('/auth/verify-otp', verifyOtp);
