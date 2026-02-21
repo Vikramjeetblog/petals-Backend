@@ -3,45 +3,80 @@ const Order = require('../order/order.model');
 const crypto = require('crypto');
 const { VENDOR_ACCEPT_MINUTES } = require('../../config/sla.config');
 
+/* ================= ID GENERATOR ================= */
 const generatePrefixedId = (prefix) =>
   `${prefix}_${crypto.randomUUID().split('-')[0].toUpperCase()}`;
 
+/* ================= LOGISTICS FLAG ENGINE ================= */
+const toLogisticsFlags = (product) => {
+  const perishable = Boolean(product?.flags?.perishable);
+  const fragile =
+    Boolean(product?.flags?.fragile) ||
+    product?.logisticsFlag === 'FRAGILE';
+
+  const liveAnimal =
+    Boolean(product?.flags?.liveAnimal) ||
+    product?.logisticsFlag === 'LIVE_ANIMAL';
+
+  return {
+    perishable,
+    fragile,
+    liveAnimal,
+    handleWithCare: fragile || liveAnimal,
+    logisticsFlag: liveAnimal
+      ? 'LIVE_ANIMAL'
+      : fragile
+      ? 'FRAGILE'
+      : null,
+  };
+};
+
 /* ======================================================
-   MULTI-VENDOR CHECKOUT (SPLIT ORDER + TRACKING)
+   HYBRID CHECKOUT (EXPRESS + MARKETPLACE)
 ====================================================== */
 exports.checkout = async (req, res) => {
   try {
+    if (!req.user?._id) {
+      return res.status(401).json({ message: 'User not authenticated' });
+    }
+
     const user = req.user;
 
     const cart = await Cart.findOne({
       user: user._id,
       isActive: true,
-    }).populate('marketplaceItems.vendor');
+    })
+      .populate('expressItems.product')
+      .populate('marketplaceItems.product')
+      .populate('marketplaceItems.vendor');
 
-    if (!cart) {
+    if (!cart || (cart.expressItems.length === 0 && cart.marketplaceItems.length === 0)) {
       return res.status(400).json({ message: 'Cart is empty' });
-    }
-
-    if (cart.expressItems.length === 0 && cart.marketplaceItems.length === 0) {
-      return res.status(400).json({ message: 'Cart has no items' });
     }
 
     const paymentGroupId = generatePrefixedId('PG');
     const parentOrderId = generatePrefixedId('PO');
-    const orders = [];
+    const createdOrders = [];
 
-    /* ================= EXPRESS ORDER ================= */
+    /* ======================================================
+       EXPRESS ORDER
+    ====================================================== */
     if (cart.expressItems.length > 0) {
       let total = 0;
 
       const items = cart.expressItems.map((item) => {
+        if (!item.product || !item.product.isActive) {
+          throw new Error('One or more express products are unavailable');
+        }
+
         const lineTotal = item.price * item.quantity;
         total += lineTotal;
 
         return {
-          product: item.product,
+          product: item.product._id,
           quantity: item.quantity,
           price: item.price,
+          logisticsFlags: toLogisticsFlags(item.product),
         };
       });
 
@@ -51,29 +86,35 @@ exports.checkout = async (req, res) => {
         parentOrderId,
         trackingId: generatePrefixedId('TRK_EXP'),
         user: user._id,
-        vendor: null,
         type: 'EXPRESS',
         fulfillmentSource: 'STORE',
+        vendor: null,
         items,
         totalAmount: total,
         paymentStatus: 'PAID',
         status: 'PLACED',
       });
 
-      orders.push(expressOrder);
+      createdOrders.push(expressOrder);
     }
 
-    /* ================= GROUP MARKETPLACE ITEMS ================= */
+    /* ======================================================
+       GROUP MARKETPLACE ITEMS BY VENDOR
+    ====================================================== */
     const vendorBuckets = {};
 
     for (const item of cart.marketplaceItems) {
+      if (!item.product || !item.product.isActive) {
+        return res.status(400).json({
+          message: 'One or more marketplace products are unavailable',
+        });
+      }
+
       if (!item.vendor) {
         return res.status(400).json({
           message: 'Marketplace item missing vendor',
         });
       }
-
-      const vendorId = item.vendor._id.toString();
 
       if (!item.vendor.isActive || !item.vendor.isOnline) {
         return res.status(400).json({
@@ -81,10 +122,11 @@ exports.checkout = async (req, res) => {
         });
       }
 
+      const vendorId = item.vendor._id.toString();
+
       if (!vendorBuckets[vendorId]) {
         vendorBuckets[vendorId] = {
-          vendor: item.vendor._id,
-          vendorData: item.vendor,
+          vendor: item.vendor,
           items: [],
           total: 0,
         };
@@ -93,17 +135,21 @@ exports.checkout = async (req, res) => {
       const lineTotal = item.price * item.quantity;
 
       vendorBuckets[vendorId].items.push({
-        product: item.product,
+        product: item.product._id,
         quantity: item.quantity,
         price: item.price,
+        logisticsFlags: toLogisticsFlags(item.product),
       });
 
       vendorBuckets[vendorId].total += lineTotal;
     }
 
-    /* ================= CREATE VENDOR ORDERS ================= */
+    /* ======================================================
+       CREATE VENDOR ORDERS (WITH SLA + AUTO ACCEPT)
+    ====================================================== */
     for (const vendorId in vendorBuckets) {
       const bucket = vendorBuckets[vendorId];
+
       const acceptBy = new Date(
         Date.now() + VENDOR_ACCEPT_MINUTES * 60 * 1000
       );
@@ -114,9 +160,9 @@ exports.checkout = async (req, res) => {
         parentOrderId,
         trackingId: generatePrefixedId('TRK_MKT'),
         user: user._id,
+        vendor: bucket.vendor._id,
         type: 'MARKETPLACE',
         fulfillmentSource: 'VENDOR',
-        vendor: bucket.vendor,
         items: bucket.items,
         totalAmount: bucket.total,
         paymentStatus: 'COD',
@@ -124,30 +170,42 @@ exports.checkout = async (req, res) => {
         sla: { acceptBy },
       });
 
-      if (bucket.vendorData.autoAcceptOrders) {
+      /* AUTO ACCEPT SUPPORT */
+      if (bucket.vendor.autoAcceptOrders) {
         vendorOrder.status = 'ACCEPTED';
         vendorOrder.acceptedAt = new Date();
         await vendorOrder.save();
       }
 
-      orders.push(vendorOrder);
+      createdOrders.push(vendorOrder);
     }
 
-    /* ================= CLEAR CART ================= */
-    cart.isActive = false;
+    /* ======================================================
+       CLEAR CART
+    ====================================================== */
     cart.expressItems = [];
     cart.marketplaceItems = [];
+    cart.isActive = false;
     await cart.save();
 
+    /* ======================================================
+       FINAL RESPONSE
+    ====================================================== */
     return res.status(200).json({
       message: 'Checkout successful',
       paymentGroupId,
       parentOrderId,
-      orderCount: orders.length,
-      orders,
+      orderCount: createdOrders.length,
+      orders: createdOrders,
     });
+
   } catch (error) {
-    console.error('MULTI-VENDOR CHECKOUT ERROR:', error);
+    console.error('HYBRID CHECKOUT ERROR:', error);
+
+    if (error.message?.includes('unavailable')) {
+      return res.status(400).json({ message: error.message });
+    }
+
     return res.status(500).json({
       message: 'Something went wrong during checkout',
     });
