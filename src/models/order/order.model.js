@@ -26,7 +26,8 @@ const OrderItemSchema = new mongoose.Schema(
 /*  ORDER  */
 const OrderSchema = new mongoose.Schema(
   {
-    /*  IDENTIFIERS  */
+    /* ================= IDENTIFIERS ================= */
+
     orderNumber: {
       type: String,
       unique: true,
@@ -39,20 +40,34 @@ const OrderSchema = new mongoose.Schema(
       index: true,
     },
 
-   
-sla: {
-  acceptBy: {
-    type: Date, // Vendor must accept before this time
-    index: true,
-  },
-  acceptedLate: {
-    type: Boolean,
-    default: false,
-  },
-},
+    parentOrderId: {
+      type: String,
+      required: true,
+      index: true,
+    },
 
+    trackingId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+    },
 
-    /* ACTORS  */
+    /* ================= SLA ================= */
+
+    sla: {
+      acceptBy: {
+        type: Date,
+        index: true,
+      },
+      acceptedLate: {
+        type: Boolean,
+        default: false,
+      },
+    },
+
+    /* ================= ACTORS ================= */
+
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -66,7 +81,8 @@ sla: {
       default: null,
     },
 
-    /*  ORDER TYPE  */
+    /* ================= ORDER TYPE ================= */
+
     type: {
       type: String,
       enum: ['EXPRESS', 'MARKETPLACE'],
@@ -74,19 +90,29 @@ sla: {
       index: true,
     },
 
-    /*  ITEMS  */
+    fulfillmentSource: {
+      type: String,
+      enum: ['STORE', 'VENDOR'],
+      required: true,
+      index: true,
+    },
+
+    /* ================= ITEMS ================= */
+
     items: {
       type: [OrderItemSchema],
       required: true,
     },
 
-    /* AMOUNTS  */
+    /* ================= AMOUNT ================= */
+
     totalAmount: {
       type: Number,
       required: true,
     },
 
-    /* PAYMENT  */
+    /* ================= PAYMENT ================= */
+
     paymentStatus: {
       type: String,
       enum: ['PAID', 'COD', 'PENDING'],
@@ -94,10 +120,12 @@ sla: {
       index: true,
     },
 
-    /* ORDER STATUS  */
+    /* ================= STATUS ================= */
+
     status: {
       type: String,
       enum: [
+        'PENDING_VENDOR_ACCEPTANCE',
         'PLACED',
         'ACCEPTED',
         'REJECTED',
@@ -111,8 +139,11 @@ sla: {
       index: true,
     },
 
-    /*  VENDOR TIMESTAMPS  */
+    /* ================= VENDOR TIMESTAMPS ================= */
+
     acceptedAt: Date,
+    prepTimeMinutes: Number,
+    estimatedReadyAt: Date,
     preparedAt: Date,
     readyAt: Date,
     deliveredAt: Date,
@@ -127,9 +158,9 @@ sla: {
   }
 );
 
-/*  INDEXES  */
+/* ================= INDEXES ================= */
+
 OrderSchema.index({ vendor: 1, status: 1 });
 OrderSchema.index({ user: 1, createdAt: -1 });
-
 
 module.exports = mongoose.model('Order', OrderSchema);
