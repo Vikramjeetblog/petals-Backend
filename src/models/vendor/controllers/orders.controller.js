@@ -1,18 +1,41 @@
 const Order = require('../../order/order.model');
 const Vendor = require('../vendor.model');
 
-/* =========================
-   GET VENDOR ORDERS
-========================= */
+/* ===============================
+   CONFIG / CONSTANTS
+=============================== */
+
+const ACCEPTABLE_STATES = ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'];
+
+const STATUS_FLOW = {
+  ACCEPTED: ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'],
+  REJECTED: ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'],
+  PREPARING: ['ACCEPTED'],
+  READY: ['PREPARING'],
+  DELIVERED: ['READY'],
+};
+
+const sendError = (res, message, status = 400) =>
+  res.status(status).json({ success: false, message });
+
+const sendSuccess = (res, data, status = 200) =>
+  res.status(status).json({ success: true, data });
+
+/* ===============================
+   GET VENDOR ORDERS (Paginated)
+=============================== */
+
 exports.getVendorOrders = async (req, res) => {
   try {
     const vendorId = req.user._id;
-    const { status, page = 1, limit = 20 } = req.query;
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Number(req.query.limit) || 20, 100);
+    const status = req.query.status;
 
     const filter = { vendor: vendorId };
     if (status) filter.status = status;
 
-    const skip = (Number(page) - 1) * Number(limit);
+    const skip = (page - 1) * limit;
 
     const [orders, total] = await Promise.all([
       Order.find(filter)
@@ -20,66 +43,66 @@ exports.getVendorOrders = async (req, res) => {
         .populate('items.product', 'name image')
         .sort({ createdAt: -1 })
         .skip(skip)
-        .limit(Number(limit)),
+        .limit(limit)
+        .lean(),
       Order.countDocuments(filter),
     ]);
 
-    return res.json({
+    return sendSuccess(res, {
       meta: {
         total,
-        page: Number(page),
+        page,
         pages: Math.ceil(total / limit),
       },
-      data: orders,
+      orders,
     });
+
   } catch (error) {
-    console.error('❌ GET VENDOR ORDERS ERROR:', error);
-    return res.status(500).json({ message: 'Failed to fetch vendor orders' });
+    console.error('GET VENDOR ORDERS ERROR:', error);
+    return sendError(res, 'Failed to fetch vendor orders', 500);
   }
 };
 
-/* =========================
+/* ===============================
    GET SINGLE ORDER
-========================= */
+=============================== */
+
 exports.getVendorOrderById = async (req, res) => {
   try {
-    const vendorId = req.user._id;
-    const { orderId } = req.params;
-
     const order = await Order.findOne({
-      _id: orderId,
-      vendor: vendorId,
+      _id: req.params.orderId,
+      vendor: req.user._id,
     })
       .populate('user', 'phone')
       .populate('items.product', 'name image');
 
     if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
+      return sendError(res, 'Order not found', 404);
     }
 
-    return res.json(order);
+    return sendSuccess(res, order);
+
   } catch (error) {
-    console.error('❌ GET ORDER DETAIL ERROR:', error);
-    return res.status(500).json({ message: 'Failed to fetch order details' });
+    console.error('GET ORDER DETAIL ERROR:', error);
+    return sendError(res, 'Failed to fetch order details', 500);
   }
 };
 
-/* =========================
+/* ===============================
    ACCEPT ORDER
-========================= */
+=============================== */
+
 exports.acceptOrder = async (req, res) => {
   try {
-    const vendorId = req.user._id;
-    const { orderId } = req.params;
     const { prepTime } = req.body;
 
     if (!prepTime || Number(prepTime) <= 0) {
-      return res.status(400).json({ message: 'Prep time required' });
+      return sendError(res, 'Valid prep time required');
     }
 
-    const vendor = await Vendor.findById(vendorId);
+    const vendor = await Vendor.findById(req.user._id);
     if (!vendor || !vendor.isOnline || !vendor.isActive) {
-      return res.status(403).json({ message: 'Vendor offline or inactive' });
+      return sendError(res, 'Vendor offline or inactive', 403);
     }
 
     const now = new Date();
@@ -87,148 +110,113 @@ exports.acceptOrder = async (req, res) => {
       now.getTime() + Number(prepTime) * 60000
     );
 
-    const order = await Order.findOneAndUpdate(
-      {
-        _id: orderId,
-        vendor: vendorId,
-        status: { $in: ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'] }, // ✅ UPDATED
-      },
-      {
-        $set: {
-          status: 'ACCEPTED',
-          acceptedAt: now,
-          prepTimeMinutes: Number(prepTime),
-          estimatedReadyAt,
-        },
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(400).json({ message: 'Order cannot be accepted' });
-    }
-
-    return res.json({ message: 'Order accepted', order });
-  } catch (error) {
-    console.error('❌ ACCEPT ORDER ERROR:', error);
-    return res.status(500).json({ message: 'Failed to accept order' });
-  }
-};
-
-/* =========================
-   REJECT ORDER
-========================= */
-exports.rejectOrder = async (req, res) => {
-  try {
-    const vendorId = req.user._id;
-    const { orderId } = req.params;
-    const { reason } = req.body;
-
     const order = await Order.findOne({
-      _id: orderId,
-      vendor: vendorId,
-      status: { $in: ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'] }, // ✅ UPDATED
+      _id: req.params.orderId,
+      vendor: req.user._id,
     });
 
     if (!order) {
-      return res.status(400).json({ message: 'Order cannot be rejected' });
+      return sendError(res, 'Order not found', 404);
+    }
+
+    if (!STATUS_FLOW.ACCEPTED.includes(order.status)) {
+      return sendError(res, 'Order cannot be accepted in current state');
+    }
+
+    order.status = 'ACCEPTED';
+    order.acceptedAt = now;
+    order.prepTimeMinutes = Number(prepTime);
+    order.estimatedReadyAt = estimatedReadyAt;
+
+    await order.save();
+
+    return sendSuccess(res, order);
+
+  } catch (error) {
+    console.error('ACCEPT ORDER ERROR:', error);
+    return sendError(res, 'Failed to accept order', 500);
+  }
+};
+
+/* ===============================
+   REJECT ORDER
+=============================== */
+
+exports.rejectOrder = async (req, res) => {
+  try {
+    const order = await Order.findOne({
+      _id: req.params.orderId,
+      vendor: req.user._id,
+    });
+
+    if (!order) {
+      return sendError(res, 'Order not found', 404);
+    }
+
+    if (!STATUS_FLOW.REJECTED.includes(order.status)) {
+      return sendError(res, 'Order cannot be rejected in current state');
     }
 
     order.status = 'REJECTED';
-    order.rejectionReason = reason || 'Rejected by vendor';
+    order.rejectionReason = req.body.reason || 'Rejected by vendor';
     await order.save();
 
-    return res.json({ message: 'Order rejected', order });
+    return sendSuccess(res, order);
+
   } catch (error) {
-    console.error('❌ REJECT ORDER ERROR:', error);
-    return res.status(500).json({ message: 'Failed to reject order' });
+    console.error('REJECT ORDER ERROR:', error);
+    return sendError(res, 'Failed to reject order', 500);
   }
 };
 
-/* =========================
-   MARK PREPARING
-========================= */
-exports.markPreparing = async (req, res) => {
-  try {
-    const vendorId = req.user._id;
-    const { orderId } = req.params;
+/* ===============================
+   GENERIC STATUS TRANSITION
+=============================== */
 
+const updateStatus = async (req, res, targetStatus) => {
+  try {
     const order = await Order.findOne({
-      _id: orderId,
-      vendor: vendorId,
-      status: 'ACCEPTED',
+      _id: req.params.orderId,
+      vendor: req.user._id,
     });
 
     if (!order) {
-      return res.status(400).json({ message: 'Order must be ACCEPTED first' });
+      return sendError(res, 'Order not found', 404);
     }
 
-    order.status = 'PREPARING';
-    order.preparedAt = new Date();
+    if (!STATUS_FLOW[targetStatus].includes(order.status)) {
+      return sendError(res, `Order cannot move to ${targetStatus}`);
+    }
+
+    order.status = targetStatus;
+
+    if (targetStatus === 'PREPARING') {
+      order.preparedAt = new Date();
+    }
+
+    if (targetStatus === 'READY') {
+      order.readyAt = new Date();
+    }
+
+    if (targetStatus === 'DELIVERED') {
+      order.deliveredAt = new Date();
+    }
+
     await order.save();
 
-    return res.json({ message: 'Order is preparing', order });
+    return sendSuccess(res, order);
+
   } catch (error) {
-    return res.status(500).json({ message: 'Failed to update order' });
+    console.error('STATUS UPDATE ERROR:', error);
+    return sendError(res, 'Failed to update order', 500);
   }
 };
 
-/* =========================
-   MARK READY
-========================= */
-exports.markReady = async (req, res) => {
-  try {
-    const vendorId = req.user._id;
-    const { orderId } = req.params;
+exports.markPreparing = (req, res) =>
+  updateStatus(req, res, 'PREPARING');
 
-    const order = await Order.findOne({
-      _id: orderId,
-      vendor: vendorId,
-      status: 'PREPARING',
-    });
+exports.markReady = (req, res) =>
+  updateStatus(req, res, 'READY');
 
-    if (!order) {
-      return res.status(400).json({ message: 'Order must be PREPARING first' });
-    }
-
-    order.status = 'READY';
-    order.readyAt = new Date();
-    await order.save();
-
-    return res.json({ message: 'Order ready', order });
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to update order' });
-  }
-};
-
-exports.markDelivered = async (req, res) => {
-  try {
-    const vendorId = req.user._id;
-    const { orderId } = req.params;
-
-    const order = await Order.findOneAndUpdate(
-      {
-        _id: orderId,
-        vendor: vendorId,
-        status: 'READY',
-      },
-      {
-        $set: {
-          status: 'DELIVERED',
-          deliveredAt: new Date(),
-        },
-      },
-      { new: true }
-    );
-
-    if (!order) {
-      return res.status(400).json({
-        message: 'Order must be READY first',
-      });
-    }
-
-    return res.json({ message: 'Order delivered', order });
-  } catch (error) {
-    return res.status(500).json({ message: 'Failed to update order' });
-  }
-};
+exports.markDelivered = (req, res) =>
+  updateStatus(req, res, 'DELIVERED');
