@@ -49,7 +49,7 @@ const SensitiveInfoSchema = new mongoose.Schema({
    canHandleLiveAnimal: {
      type: Boolean,
      default: false,
-   }
+   },
     rating: {
       type: Number,
       default: 5,
