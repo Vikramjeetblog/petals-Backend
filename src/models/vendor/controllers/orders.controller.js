@@ -1,4 +1,3 @@
-
 const Order = require('../../order/order.model');
 const Vendor = require('../vendor.model');
 
@@ -92,7 +91,7 @@ exports.acceptOrder = async (req, res) => {
       {
         _id: orderId,
         vendor: vendorId,
-        status: 'PLACED',
+        status: { $in: ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'] }, // ✅ UPDATED
       },
       {
         $set: {
@@ -128,7 +127,7 @@ exports.rejectOrder = async (req, res) => {
     const order = await Order.findOne({
       _id: orderId,
       vendor: vendorId,
-      status: 'PLACED',
+      status: { $in: ['PLACED', 'PENDING_VENDOR_ACCEPTANCE'] }, // ✅ UPDATED
     });
 
     if (!order) {
@@ -170,7 +169,6 @@ exports.markPreparing = async (req, res) => {
 
     return res.json({ message: 'Order is preparing', order });
   } catch (error) {
-    console.error('❌ PREPARING ERROR:', error);
     return res.status(500).json({ message: 'Failed to update order' });
   }
 };
@@ -199,10 +197,10 @@ exports.markReady = async (req, res) => {
 
     return res.json({ message: 'Order ready', order });
   } catch (error) {
-    console.error('❌ READY ERROR:', error);
     return res.status(500).json({ message: 'Failed to update order' });
   }
 };
+
 exports.markDelivered = async (req, res) => {
   try {
     const vendorId = req.user._id;
@@ -231,8 +229,6 @@ exports.markDelivered = async (req, res) => {
 
     return res.json({ message: 'Order delivered', order });
   } catch (error) {
-    console.error('❌ DELIVER ERROR:', error);
     return res.status(500).json({ message: 'Failed to update order' });
   }
 };
-
