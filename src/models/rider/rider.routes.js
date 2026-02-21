@@ -9,7 +9,7 @@ const {
   updateAvailability,
   updateSensitiveInfo,
   getSensitiveInfo,
-} = require('./rider.controller');
+} = require('./rider.contorller');
 
 router.get('/profile', authMiddleware, riderOnly, getProfile);
 router.post('/location', authMiddleware, riderOnly, updateLocation);
