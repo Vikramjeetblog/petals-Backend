@@ -172,20 +172,33 @@ exports.getOrderById = async (req, res) => {
 exports.updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
-    const allowedStatuses = ['assigned', 'picked', 'enroute', 'arrived', 'delivered'];
+
+    const allowedStatuses = [
+      'assigned',
+      'picked',
+      'enroute',
+      'arrived',
+      'delivered'
+    ];
+
     if (!allowedStatuses.includes(status)) {
-     return failure(res, 'Invalid status', 'INVALID_STATUS');
-     }
- 
-    if (typeof isAvailable === 'boolean') {
-      req.user.isAvailable = isAvailable;
-    const order = await RiderOrder.findOne({ _id: req.params.orderId, rider: req.user._id });
-   if (!order) return failure(res, 'Order not found', 'ORDER_NOT_FOUND', 404);
+      return failure(res, 'Invalid status', 'INVALID_STATUS');
+    }
 
-   order.status = status;
-   await order.save();
+    const order = await RiderOrder.findOne({
+      _id: req.params.orderId,
+      rider: req.user._id
+    });
 
-   return success(res, order);
+    if (!order) {
+      return failure(res, 'Order not found', 'ORDER_NOT_FOUND', 404);
+    }
+
+    order.status = status;
+    await order.save();
+
+    return success(res, order);
+
   } catch (error) {
     console.error('RIDER ORDER STATUS UPDATE ERROR:', error);
     return failure(res, 'Something went wrong', 'INTERNAL_ERROR', 500);
