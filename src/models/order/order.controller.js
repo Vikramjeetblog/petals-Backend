@@ -1,172 +1,191 @@
-const mongoose = require('mongoose');
 const Cart = require('../cart/cart.model');
 const Order = require('./order.model');
+const crypto = require('crypto');
+
+const generatePrefixedId = (prefix) =>
+  `${prefix}_${crypto.randomUUID().split('-')[0].toUpperCase()}`;
 
 /* ======================================================
-   PLACE ORDER (FROM CART)
+   PLACE ORDER (FROM CART, SPLIT BY FULFILLMENT)
 ====================================================== */
 exports.placeOrder = async (req, res) => {
   try {
-    /* ---------- AUTH ---------- */
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
-    /* ---------- FETCH CART ---------- */
     const cart = await Cart.findOne({
       user: req.user._id,
-      isActive: true
+      isActive: true,
     })
       .populate('expressItems.product')
-      .populate('marketplaceItems.product');
+      .populate('marketplaceItems.product')
+      .populate('marketplaceItems.vendor');
 
-    if (!cart) {
+    if (!cart || (cart.expressItems.length === 0 && cart.marketplaceItems.length === 0)) {
       return res.status(400).json({ message: 'Cart is empty' });
     }
 
-    if (
-      cart.expressItems.length === 0 &&
-      cart.marketplaceItems.length === 0
-    ) {
-      return res.status(400).json({ message: 'Cart has no items' });
-    }
+    const paymentGroupId = generatePrefixedId('PG');
+    const parentOrderId = generatePrefixedId('PO');
+    const createdOrders = [];
 
-    /* ---------- BUILD ORDER ITEMS ---------- */
-    const orderItems = [];
+    /* ================= EXPRESS ORDER ================= */
+    if (cart.expressItems.length > 0) {
+      let total = 0;
 
-    let expressTotal = 0;
-    let marketplaceTotal = 0;
+      const items = cart.expressItems.map((item) => {
+        if (!item.product || !item.product.isActive) {
+          throw new Error('One or more express products are unavailable');
+        }
 
-    /* EXPRESS ITEMS */
-    for (const item of cart.expressItems) {
-      if (!item.product || !item.product.isActive) {
-        return res.status(400).json({
-          message: 'One or more express products are unavailable'
-        });
-      }
+        const lineTotal = item.price * item.quantity;
+        total += lineTotal;
 
-      const lineTotal = item.price * item.quantity;
-      expressTotal += lineTotal;
-
-      orderItems.push({
-        product: item.product._id,
-        quantity: item.quantity,
-        price: item.price,
-        fulfillmentModel: 'EXPRESS',
-        vendor: null
+        return {
+          product: item.product._id,
+          quantity: item.quantity,
+          price: item.price,
+        };
       });
+
+      const expressOrder = await Order.create({
+        orderNumber: generatePrefixedId('ORD_EXP'),
+        paymentGroupId,
+        parentOrderId,
+        trackingId: generatePrefixedId('TRK_EXP'),
+        user: req.user._id,
+        type: 'EXPRESS',
+        fulfillmentSource: 'STORE',
+        items,
+        totalAmount: total,
+        paymentStatus: 'PAID',
+        status: 'PLACED',
+      });
+
+      createdOrders.push(expressOrder);
     }
 
-    /* MARKETPLACE ITEMS */
+    /* ================= GROUP MARKETPLACE ITEMS ================= */
+    const vendorBuckets = {};
+
     for (const item of cart.marketplaceItems) {
       if (!item.product || !item.product.isActive) {
         return res.status(400).json({
-          message: 'One or more marketplace products are unavailable'
+          message: 'One or more marketplace products are unavailable',
         });
       }
 
       if (!item.vendor) {
         return res.status(400).json({
-          message: 'Marketplace item missing vendor'
+          message: 'Marketplace item missing vendor',
         });
       }
 
-      const lineTotal = item.price * item.quantity;
-      marketplaceTotal += lineTotal;
+      const vendorId = item.vendor._id.toString();
 
-      orderItems.push({
+      if (!vendorBuckets[vendorId]) {
+        vendorBuckets[vendorId] = {
+          items: [],
+          total: 0,
+          vendor: item.vendor._id,
+        };
+      }
+
+      vendorBuckets[vendorId].items.push({
         product: item.product._id,
         quantity: item.quantity,
         price: item.price,
-        fulfillmentModel: 'MARKETPLACE',
-        vendor: item.vendor
       });
+
+      vendorBuckets[vendorId].total += item.price * item.quantity;
     }
 
-    const grandTotal = expressTotal + marketplaceTotal;
+    /* ================= CREATE VENDOR ORDERS ================= */
+    for (const vendorId in vendorBuckets) {
+      const bucket = vendorBuckets[vendorId];
 
-    /* ---------- CREATE ORDER ---------- */
-    const order = await Order.create({
-      user: req.user._id,
-      items: orderItems,
-      totals: {
-        expressTotal,
-        marketplaceTotal,
-        grandTotal
-      },
-      splitRequired:
-        cart.expressItems.length > 0 &&
-        cart.marketplaceItems.length > 0,
-      status: 'ACCEPTED',        // auto-accept
-      paymentStatus: 'PAID'      // mock payment
-    });
+      const vendorOrder = await Order.create({
+        orderNumber: generatePrefixedId('ORD_MKT'),
+        paymentGroupId,
+        parentOrderId,
+        trackingId: generatePrefixedId('TRK_MKT'),
+        user: req.user._id,
+        vendor: bucket.vendor,
+        type: 'MARKETPLACE',
+        fulfillmentSource: 'VENDOR',
+        items: bucket.items,
+        totalAmount: bucket.total,
+        paymentStatus: 'COD',
+        status: 'PENDING_VENDOR_ACCEPTANCE',
+      });
 
-    /* ---------- CLEAR CART ---------- */
+      createdOrders.push(vendorOrder);
+    }
+
+    /* ================= CLEAR CART ================= */
     cart.expressItems = [];
     cart.marketplaceItems = [];
     cart.isActive = false;
     await cart.save();
 
-    /* ---------- RESPONSE ---------- */
     return res.status(201).json({
-      message: 'Order placed successfully',
-      order
+      message: 'Order(s) placed successfully',
+      paymentGroupId,
+      parentOrderId,
+      orders: createdOrders,
     });
   } catch (error) {
-    console.error('❌ PLACE ORDER ERROR:', error);
+    const isValidationError = error.message?.includes('unavailable');
+
+    if (isValidationError) {
+      return res.status(400).json({ message: error.message });
+    }
+
+    console.error('PLACE ORDER ERROR:', error);
     return res.status(500).json({ message: 'Something went wrong' });
   }
 };
-
 
 /* ======================================================
    GET USER ORDERS (ORDER HISTORY)
 ====================================================== */
 exports.getMyOrders = async (req, res) => {
   try {
-    /* ---------- AUTH ---------- */
     if (!req.user?._id) {
       return res.status(401).json({ message: 'User not authenticated' });
     }
 
     const orders = await Order.find({ user: req.user._id })
       .sort({ createdAt: -1 })
-      .populate('items.product');
+      .populate('items.product', 'name image category');
 
-    if (!orders || orders.length === 0) {
+    if (!orders.length) {
       return res.status(200).json({
         message: 'No orders found',
-        orders: []
+        orders: [],
       });
     }
 
-    /* ---------- FORMAT RESPONSE ---------- */
-    const formattedOrders = orders.map((order) => ({
-      _id: order._id,
-      status: order.status,
-      paymentStatus: order.paymentStatus,
-      createdAt: order.createdAt,
-      splitRequired: order.splitRequired,
-      totals: order.totals,
-      items: order.items.map((item) => ({
-        product: {
-          _id: item.product?._id,
-          name: item.product?.name,
-          image: item.product?.image,
-          category: item.product?.category
-        },
-        quantity: item.quantity,
-        price: item.price,
-        fulfillmentModel: item.fulfillmentModel
-      }))
-    }));
-
     return res.status(200).json({
       message: 'Orders fetched successfully',
-      orders: formattedOrders
+      orders: orders.map((order) => ({
+        _id: order._id,
+        orderNumber: order.orderNumber,
+        trackingId: order.trackingId,
+        parentOrderId: order.parentOrderId,
+        paymentGroupId: order.paymentGroupId,
+        fulfillmentSource: order.fulfillmentSource,
+        type: order.type,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        createdAt: order.createdAt,
+        totalAmount: order.totalAmount,
+        items: order.items,
+      })),
     });
   } catch (error) {
-    console.error('❌ GET ORDERS ERROR:', error);
+    console.error('GET ORDERS ERROR:', error);
     return res.status(500).json({ message: 'Something went wrong' });
   }
 };
