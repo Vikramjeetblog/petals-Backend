@@ -1,29 +1,27 @@
-const Order = require('../modules/order/order.model');
+const Order = require('../models/order/order.model');
 
-const SLA_CHECK_INTERVAL = 30 * 1000; // 30s
-const ACCEPT_TIMEOUT = 2 * 60 * 1000; // 2 minutes
+const SLA_CHECK_INTERVAL = 30 * 1000;
 
 async function checkExpiredOrders() {
   try {
-    const cutoff = new Date(Date.now() - ACCEPT_TIMEOUT);
+    const now = new Date();
 
     const result = await Order.updateMany(
       {
-        status: 'PLACED',
-        createdAt: { $lt: cutoff },
+        status: 'PENDING_VENDOR_ACCEPTANCE',
+        'sla.acceptBy': { $lt: now },
       },
       {
         $set: {
-          status: 'REJECTED',
+          status: 'CANCELLED',
           rejectionReason: 'Vendor did not accept within SLA time',
+          'sla.acceptedLate': true,
         },
       }
     );
 
     if (result.modifiedCount > 0) {
-      console.log(
-        ` SLA AUTO-REJECTED: ${result.modifiedCount} orders`
-      );
+      console.log(`⏱ SLA AUTO-CANCELLED: ${result.modifiedCount} orders`);
     }
   } catch (err) {
     console.error('SLA WORKER ERROR:', err);
