@@ -129,9 +129,18 @@
          default: [0, 0],
        },
      },
-     sensitiveInfo: {
+    sensitiveInfo: {
        type: SensitiveInfoSchema,
        default: () => ({}),
        select: false,
      },
    },
+   {
+     timestamps: true,
+   }
+);
+
+
+RiderSchema.index({ lastLocation: "2dsphere" });
+
+module.exports = mongoose.model("Rider", RiderSchema);
