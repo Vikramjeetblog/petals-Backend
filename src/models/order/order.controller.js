@@ -1,12 +1,38 @@
 const Cart = require('../cart/cart.model');
 const Order = require('./order.model');
+const Vendor = require('../vendor/vendor.model');
 const crypto = require('crypto');
 
+/* ================= ID GENERATOR ================= */
 const generatePrefixedId = (prefix) =>
   `${prefix}_${crypto.randomUUID().split('-')[0].toUpperCase()}`;
 
+/* ================= LOGISTICS ENGINE ================= */
+const toLogisticsFlags = (product) => {
+  const perishable = Boolean(product?.flags?.perishable);
+  const fragile =
+    Boolean(product?.flags?.fragile) ||
+    product?.logisticsFlag === 'FRAGILE';
+
+  const liveAnimal =
+    Boolean(product?.flags?.liveAnimal) ||
+    product?.logisticsFlag === 'LIVE_ANIMAL';
+
+  return {
+    perishable,
+    fragile,
+    liveAnimal,
+    handleWithCare: fragile || liveAnimal,
+    logisticsFlag: liveAnimal
+      ? 'LIVE_ANIMAL'
+      : fragile
+      ? 'FRAGILE'
+      : null,
+  };
+};
+
 /* ======================================================
-   PLACE ORDER (FROM CART, SPLIT BY FULFILLMENT)
+   PLACE ORDER (SCALABLE SPLIT ARCHITECTURE)
 ====================================================== */
 exports.placeOrder = async (req, res) => {
   try {
@@ -46,6 +72,7 @@ exports.placeOrder = async (req, res) => {
           product: item.product._id,
           quantity: item.quantity,
           price: item.price,
+          logisticsFlags: toLogisticsFlags(item.product),
         };
       });
 
@@ -57,6 +84,7 @@ exports.placeOrder = async (req, res) => {
         user: req.user._id,
         type: 'EXPRESS',
         fulfillmentSource: 'STORE',
+        vendor: null,
         items,
         totalAmount: total,
         paymentStatus: 'PAID',
@@ -66,7 +94,7 @@ exports.placeOrder = async (req, res) => {
       createdOrders.push(expressOrder);
     }
 
-    /* ================= GROUP MARKETPLACE ITEMS ================= */
+    /* ================= MARKETPLACE GROUPING ================= */
     const vendorBuckets = {};
 
     for (const item of cart.marketplaceItems) {
@@ -82,23 +110,32 @@ exports.placeOrder = async (req, res) => {
         });
       }
 
+      if (!item.vendor.isActive || !item.vendor.isOnline) {
+        return res.status(400).json({
+          message: `Vendor ${item.vendor.storeName} is currently unavailable`,
+        });
+      }
+
       const vendorId = item.vendor._id.toString();
 
       if (!vendorBuckets[vendorId]) {
         vendorBuckets[vendorId] = {
+          vendor: item.vendor,
           items: [],
           total: 0,
-          vendor: item.vendor._id,
         };
       }
+
+      const lineTotal = item.price * item.quantity;
 
       vendorBuckets[vendorId].items.push({
         product: item.product._id,
         quantity: item.quantity,
         price: item.price,
+        logisticsFlags: toLogisticsFlags(item.product),
       });
 
-      vendorBuckets[vendorId].total += item.price * item.quantity;
+      vendorBuckets[vendorId].total += lineTotal;
     }
 
     /* ================= CREATE VENDOR ORDERS ================= */
@@ -111,7 +148,7 @@ exports.placeOrder = async (req, res) => {
         parentOrderId,
         trackingId: generatePrefixedId('TRK_MKT'),
         user: req.user._id,
-        vendor: bucket.vendor,
+        vendor: bucket.vendor._id,
         type: 'MARKETPLACE',
         fulfillmentSource: 'VENDOR',
         items: bucket.items,
@@ -133,22 +170,24 @@ exports.placeOrder = async (req, res) => {
       message: 'Order(s) placed successfully',
       paymentGroupId,
       parentOrderId,
+      orderCount: createdOrders.length,
       orders: createdOrders,
     });
-  } catch (error) {
-    const isValidationError = error.message?.includes('unavailable');
 
-    if (isValidationError) {
+  } catch (error) {
+    if (error.message?.includes('unavailable')) {
       return res.status(400).json({ message: error.message });
     }
 
     console.error('PLACE ORDER ERROR:', error);
-    return res.status(500).json({ message: 'Something went wrong' });
+    return res.status(500).json({
+      message: 'Something went wrong',
+    });
   }
 };
 
 /* ======================================================
-   GET USER ORDERS (ORDER HISTORY)
+   GET USER ORDERS
 ====================================================== */
 exports.getMyOrders = async (req, res) => {
   try {
@@ -159,13 +198,6 @@ exports.getMyOrders = async (req, res) => {
     const orders = await Order.find({ user: req.user._id })
       .sort({ createdAt: -1 })
       .populate('items.product', 'name image category');
-
-    if (!orders.length) {
-      return res.status(200).json({
-        message: 'No orders found',
-        orders: [],
-      });
-    }
 
     return res.status(200).json({
       message: 'Orders fetched successfully',
@@ -179,13 +211,22 @@ exports.getMyOrders = async (req, res) => {
         type: order.type,
         status: order.status,
         paymentStatus: order.paymentStatus,
-        createdAt: order.createdAt,
         totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        hasFragileItems: order.items.some(
+          (item) => item.logisticsFlags?.fragile
+        ),
+        hasLiveAnimalItems: order.items.some(
+          (item) => item.logisticsFlags?.liveAnimal
+        ),
         items: order.items,
       })),
     });
+
   } catch (error) {
     console.error('GET ORDERS ERROR:', error);
-    return res.status(500).json({ message: 'Something went wrong' });
+    return res.status(500).json({
+      message: 'Something went wrong',
+    });
   }
 };
