@@ -1,4 +1,4 @@
- const SensitiveInfoSchema = new mongoose.Schema(
+ const SensitiveInfoSchema = new mongoose.Schema({
        type: String,
        select: false,
        default: null,
